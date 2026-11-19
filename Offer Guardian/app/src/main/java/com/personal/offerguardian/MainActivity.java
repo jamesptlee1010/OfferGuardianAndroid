@@ -25,6 +25,9 @@ import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -46,6 +49,7 @@ public final class MainActivity extends Activity {
     private TextView accessStatus, lastStatus, historyStatus;
     private Switch monitorSwitch, autoSwitch, alertSwitch, visualSwitch, visualTestSwitch;
     private EditText amountInput;
+    private TextView alertVolumeLabel;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -60,6 +64,15 @@ public final class MainActivity extends Activity {
                     .putBoolean(Prefs.AUTO_DECLINE,false)
                     .putBoolean(Prefs.VISUAL_DRY_RUN,true)
                     .apply();
+        }
+        // New alerts default to standalone audio but preserve all current rule toggles.
+        if (!prefs.getBoolean(Prefs.MIGRATED_V04, false)) {
+            prefs.edit().putBoolean(Prefs.MIGRATED_V04,true)
+                    .putBoolean(Prefs.AUDIO_USE_ALARM,true)
+                    .putInt(Prefs.AUDIO_VOLUME,85)
+                    .putInt(Prefs.AUDIO_REPEAT,2)
+                    .putInt(Prefs.AUDIO_TONE,0)
+                    .putBoolean(Prefs.AUDIO_VIBRATE,true).apply();
         }
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
@@ -152,7 +165,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.3.0  ·  Accept + Match  ·  Australia", 13, MUTED, false), lp(-2, 20));
+        root.addView(text("v0.4.0  ·  Independent $30+ alerts  ·  Australia", 13, MUTED, false), lp(-2, 20));
 
         LinearLayout settings = card(root, "Your delivery rule", "Minimum payout (AUD). Exactly A$30.00 counts as a high offer.");
         amountInput = new EditText(this);
@@ -165,7 +178,7 @@ public final class MainActivity extends Activity {
         button(settings, "Save minimum payout", true, v -> saveThreshold());
         monitorSwitch = toggle(settings, "Monitor Uber Driver offers", prefs.getBoolean(Prefs.MONITOR, false));
         autoSwitch = toggle(settings, "Auto-decline offers BELOW the minimum", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
-        alertSwitch = toggle(settings, "Ring + vibrate for offers AT / ABOVE minimum", prefs.getBoolean(Prefs.ALERT, true));
+        alertSwitch = toggle(settings, "Alert when offers are AT / ABOVE minimum", prefs.getBoolean(Prefs.ALERT, true));
         monitorSwitch.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(Prefs.MONITOR, checked).apply();
             if (checked && !accessibilityEnabled()) {
@@ -189,7 +202,79 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Test rules (Delivery + Match)", false, v -> testExamples());
-        button(settings, "Test alert sound", false, v -> OfferAlert.signal(this, 36.00));
+        // Standalone alerts do NOT rely on Uber Driver's notification sounds.
+        LinearLayout audio = card(root, "High-value offer sound",
+                "Uber Driver can be silenced separately in Android notification settings. " +
+                "Offer Guardian plays its own bundled tone when an offer meets your minimum. " +
+                "Do not mute the whole phone or use Do Not Disturb for this setup.");
+        Switch audioAlarm = toggle(audio, "Use ALARM volume (recommended)",
+                prefs.getBoolean(Prefs.AUDIO_USE_ALARM,true));
+        audioAlarm.setOnCheckedChangeListener((b,checked) -> {
+            prefs.edit().putBoolean(Prefs.AUDIO_USE_ALARM,checked).apply();
+        });
+        audio.addView(text("ALARM uses your phone's Alarm volume; OFF uses Media volume. " +
+                "Choose whichever you can hear reliably through your phone or Bluetooth.",
+                12,MUTED,false),lp(-2,12));
+        alertVolumeLabel=text("Tone volume: "+prefs.getInt(Prefs.AUDIO_VOLUME,85)+"%",14,INK,true);
+        audio.addView(alertVolumeLabel,lp(-2,5));
+        SeekBar soundVolume = new SeekBar(this);
+        soundVolume.setMax(100);
+        soundVolume.setProgress(prefs.getInt(Prefs.AUDIO_VOLUME,85));
+        soundVolume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar,int percent,boolean fromUser) {
+                alertVolumeLabel.setText("Tone volume: "+percent+"%");
+                if (fromUser) prefs.edit().putInt(Prefs.AUDIO_VOLUME,percent).apply();
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        audio.addView(soundVolume,lp(48,6));
+        audio.addView(text("Tone",14,INK,true),lp(-2,5));
+        Spinner toneSpinner=new Spinner(this);
+        ArrayAdapter<String> tones=new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"Bright chime", "Triple beep"});
+        toneSpinner.setAdapter(tones);
+        toneSpinner.setSelection(Math.max(0,Math.min(1,prefs.getInt(Prefs.AUDIO_TONE,0))));
+        toneSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,int pos,long id) {
+                prefs.edit().putInt(Prefs.AUDIO_TONE,pos).apply();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
+        audio.addView(toneSpinner,lp(48,10));
+        audio.addView(text("Play tone this many times",14,INK,true),lp(-2,5));
+        Spinner repeatsSpinner=new Spinner(this);
+        ArrayAdapter<String> repeatsAdapter=new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"1 time", "2 times", "3 times"});
+        repeatsSpinner.setAdapter(repeatsAdapter);
+        repeatsSpinner.setSelection(Math.max(0,Math.min(2,prefs.getInt(Prefs.AUDIO_REPEAT,2)-1)));
+        repeatsSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent,View view,int pos,long id) {
+                prefs.edit().putInt(Prefs.AUDIO_REPEAT,pos+1).apply();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
+        audio.addView(repeatsSpinner,lp(48,10));
+        Switch vibrateSwitch=toggle(audio,"Vibrate on high-value offer",
+                prefs.getBoolean(Prefs.AUDIO_VIBRATE,true));
+        vibrateSwitch.setOnCheckedChangeListener((b,checked) ->
+                prefs.edit().putBoolean(Prefs.AUDIO_VIBRATE,checked).apply());
+        button(audio,"TEST high-value ring (A$36.00)",true,v -> {
+            boolean audioStarted=OfferAlert.signal(this,36.00);
+            Toast.makeText(this,audioStarted
+                    ? "Tone started. If silent, turn up your phone's Alarm/Media volume."
+                    : "Audio did not start. Try Media mode and TEST again.",
+                    Toast.LENGTH_LONG).show();
+        });
+        button(audio,"Stop test sound",false,v -> OfferAlert.stop());
+        button(audio,"Open Android sound settings",false,v ->
+                startActivity(new Intent(Settings.ACTION_SOUND_SETTINGS)));
+        audio.addView(text("Mute only Uber Driver's notifications (where supported), NOT the entire phone. " +
+                "Some Uber sounds may come from inside Uber Driver and cannot be silenced by this app. " +
+                "Android Do Not Disturb, audio routing and system alarm/media volume still apply.",
+                12,MUTED,false),lp(-2,0));
 
         LinearLayout access = card(root, "Android permission", "Open Android settings and enable the Offer Guardian accessibility service. Android may show a warning about sensitive screen access.");
         accessStatus = text("Checking service…", 14, MUTED, true);
@@ -241,7 +326,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.3.0\n"+
+            String report="Offer Guardian v0.4.0\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {

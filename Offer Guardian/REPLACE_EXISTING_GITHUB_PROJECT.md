@@ -1,14 +1,7 @@
-# Replace the previous GitHub sources
+# Full replacement (not a patch)
 
-Earlier uploads produced duplicate paths like `OfferGuardianAndroid/OfferGuardianAndroid/app/`. Prefer one complete source tree at your repository root:
+**Do not upload the containing `OfferGuardian_v0.4.0` directory or the ZIP itself into the repository.** Extract and upload the files within it to the GitHub repository root.
 
-- `.github/workflows/build-apk.yml`
-- `app/`
-- `tests/`
-- `build.gradle`
-- `settings.gradle`
-- `gradle.properties`
+Root must contain: `.github/workflows/build-apk.yml`, `app/`, `tests/`, `build.gradle`, `settings.gradle`, `gradle.properties`, and this README. Older nested folders may coexist temporarily; the workflow selects v0.4.0 only. Delete old nested copies and old `android.yml` when practical to prevent confusion.
 
-If you cannot remove the old nested folders immediately, the build workflow will **only select a complete 0.3.0 project**, selecting the shallowest matching copy. Old `android.yml` workflows may still fail on missing `gradlew`; remove any obsolete workflow after the new build is succeeding.
-
-Do not commit user-provided Uber offer screenshots: the screenshots can expose current locations, routes, addresses and business activity.
+If the new APK cannot overwrite the previous debug-signed app due to different signatures, uninstall the old version, install the new APK, and reconfigure Accessibility/settings. The project is a complete source build, not an APK already compiled.

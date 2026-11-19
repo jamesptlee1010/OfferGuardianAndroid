@@ -10,6 +10,12 @@ final class Prefs {
     static final String MONITOR = "monitor";
     static final String AUTO_DECLINE = "auto_decline";
     static final String ALERT = "alert";
+    // Standalone alert audio settings; independent of Uber Driver notification categories.
+    static final String AUDIO_USE_ALARM = "audio_use_alarm";
+    static final String AUDIO_VOLUME = "audio_volume";
+    static final String AUDIO_REPEAT = "audio_repeat";
+    static final String AUDIO_TONE = "audio_tone";
+    static final String AUDIO_VIBRATE = "audio_vibrate";
     static final String THRESHOLD = "threshold";
     static final String LEARNING = "learning";
     static final String PENDING = "pending";
@@ -35,6 +41,7 @@ final class Prefs {
     static final String LIVE_TIME = "live_time";
     static final String DIAG_HISTORY = "diagnostic_history";
     static final String MIGRATED_V03 = "migrated_v03";
+    static final String MIGRATED_V04 = "migrated_v04";
     static final String LAST_STATUS = "last_status";
     static final String LAST_AMOUNT = "last_amount";
     static final String LAST_TIME = "last_time";

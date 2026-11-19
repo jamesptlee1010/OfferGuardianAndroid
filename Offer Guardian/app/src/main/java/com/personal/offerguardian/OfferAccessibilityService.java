@@ -37,7 +37,7 @@ import java.util.Locale;
 public final class OfferAccessibilityService extends AccessibilityService {
     private static final String UBER = "com.ubercab.driver";
     private static final long PERIOD_MS = 1700;
-    private static final long REPEAT_GUARD_MS = 25000;
+    private static final long REPEAT_GUARD_MS = 90000;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable monitorLoop = new Runnable() {
         @Override public void run() {
@@ -66,6 +66,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private double lastAmount=Double.NaN;
     private long lastDecisionAt=0;
     private int lastX=-1,lastY=-1;
+    private int noOfferFrames=0;
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
@@ -157,9 +158,16 @@ public final class OfferAccessibilityService extends AccessibilityService {
             VisualDeclineDetector.Match visual=VisualDeclineDetector.locate(pixels,
                     VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT,template,41,41);
             if(!visual.found) {
+                if (++noOfferFrames >= 2) {
+                    // Re-arm after a clearly vanished card; prevents repeatedly ringing
+                    // for a single long-lived offer, but permits new offers of same price.
+                    lastAmount=Double.NaN;
+                    lastX=-1;lastY=-1;
+                }
                 source.recycle();capturing=false;
                 status("Screenshot OK; no verified grey X on a green/black offer card. No tap.");return;
             }
+            noOfferFrames=0;
             status(String.format(Locale.US,"Grey X found at (%d,%d), %.0f%%. Reading card payout...",
                     visual.x,visual.y,visual.confidence*100));
             if(recognizer==null) recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
@@ -214,9 +222,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
         if(payout>=threshold) {
-            if(prefs.getBoolean(Prefs.ALERT,true)) {
-                OfferAlert.signal(this,payout);
-                status(String.format(Locale.US,"A$%.2f >= A$%.2f. Alert sent; YOU decide. No tap.",payout,threshold));
+            if(OfferAlertRules.shouldRing(payout,threshold,prefs.getBoolean(Prefs.ALERT,true))) {
+                boolean started=OfferAlert.signal(this,payout);
+                status(String.format(Locale.US,
+                        started ? "A$%.2f >= A$%.2f. Independent sound STARTED; you decide. No tap." :
+                                  "A$%.2f >= A$%.2f. Sound COULD NOT START (check volume/settings). No tap.",
+                        payout,threshold));
             } else status(String.format(Locale.US,"A$%.2f >= A$%.2f. Alerts off; no tap.",payout,threshold));
             return;
         }

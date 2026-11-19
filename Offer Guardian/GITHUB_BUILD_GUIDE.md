@@ -1,12 +1,9 @@
-# GitHub build, v0.3.0
+# Build Offer Guardian v0.4.0 without Android Studio
 
-1. Extract `OfferGuardian_FULL_GitHub_v0.3.0.zip`.
-2. Visit the root of your GitHub repository (`https://github.com/jamesptlee1010/OfferGuardianAndroid`).
-3. Upload the folder **contents** (not the folder itself), preserving all paths, especially `.github/workflows/build-apk.yml`.
-4. GitHub should run the `Build Offer Guardian APK` workflow after commit. You can also launch it from the Actions tab with `Run workflow`.
-5. Successful artifacts: `OfferGuardian-v0.3.0-installable-APK` → inside it `OfferGuardian-v0.3.0-debug.apk`.
-6. On phone, install the APK and check Android App info version **0.3.0**. Re-enable Accessibility if Android treats it as a new install.
+1. Upload the **contents** of this ZIP to the root of `https://github.com/jamesptlee1010/OfferGuardianAndroid`, preserving all folders. Your GitHub main directory should show `app/`, `.github/`, `tests/`, and `build.gradle` (not an additional `OfferGuardianAndroid/`).
+2. Commit and open **Actions** → **Build Offer Guardian APK**. Ignore/delete any older `android.yml` build workflow.
+3. Wait for a green tick. Open run → **Artifacts** → **OfferGuardian-v0.4.0-installable-APK**, download and extract.
+4. Install the contained `.apk` on your Android. Check App info version **0.4.0**.
+5. Enable Accessibility, set minimum A$30, then test the independent alert using Offer Guardian's **TEST high-value ring** button. Set the phone's ALARM volume up. To silence Uber notifications, change Uber Driver's notification categories separately.
 
-The workflow deliberately searches for a complete v0.3.0 source tree, so it won't silently select the older 0.1.0 project when duplicate folders are still present. There should ideally be only one copy.
-
-**If Actions fails:** Select the failed step in the new `Build Offer Guardian APK` workflow (not old `android.yml`) and share its actual error lines. Uploading only `.github/workflows/build-apk.yml` without the full Java source will not build v0.3.0.
+This is source code; compiling the APK requires GitHub Actions. The APK build itself has not been run in this environment.

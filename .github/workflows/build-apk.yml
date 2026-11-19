@@ -14,9 +14,38 @@ jobs:
     name: Compile and export Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
       - name: Check out Offer Guardian
         uses: actions/checkout@v7
+
+      - name: Find Android project (root or nested folder)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Repository files (first 100):'
+          find . -maxdepth 5 -type f -not -path './.git/*' | sort | head -100 || true
+          mapfile -t source_files < <(find . -type f \
+            -path '*/app/src/main/java/com/personal/offerguardian/OfferDetector.java' \
+            -not -path '*/.git/*' | sort)
+          if [ "${#source_files[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one OfferDetector.java in the repository; found ${#source_files[@]}."
+            echo 'If zero: upload the app/ and tests/ source folders from the ZIP, not just the workflow.'
+            echo 'If multiple: remove duplicated project folders so only one copy remains.'
+            printf 'Candidates: %s\n' "${source_files[@]}"
+            exit 1
+          fi
+          source_path="${source_files[0]}"
+          project_dir="${source_path%/app/src/main/java/com/personal/offerguardian/OfferDetector.java}"
+          for required in settings.gradle app/build.gradle tests/OfferDetectorStandaloneTest.java; do
+            if [ ! -f "$project_dir/$required" ]; then
+              echo "::error::Missing $project_dir/$required. Please upload the complete source project."
+              exit 1
+            fi
+          done
+          project_dir="$(realpath "$project_dir")"
+          echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
+          echo "Found Android project: $project_dir"
 
       - name: Set up Java 17
         uses: actions/setup-java@v6
@@ -27,8 +56,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          # Avoid the retired Android SDK "tools" package (SDK setup exit code 1).
-          packages: "platform-tools"
+          packages: 'platform-tools'
 
       - name: Install Android API 35
         run: |
@@ -41,23 +69,34 @@ jobs:
           gradle-version: '8.9'
 
       - name: Run payout parser tests
+        shell: bash
         run: |
-          mkdir -p build/host-tests
-          javac -d build/host-tests \
-            app/src/main/java/com/personal/offerguardian/OfferDetector.java \
-            tests/OfferDetectorStandaloneTest.java
-          java -cp build/host-tests com.personal.offerguardian.OfferDetectorStandaloneTest
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/offer-guardian-tests"
+          javac -d "$RUNNER_TEMP/offer-guardian-tests" \
+            "$PROJECT_DIR/app/src/main/java/com/personal/offerguardian/OfferDetector.java" \
+            "$PROJECT_DIR/tests/OfferDetectorStandaloneTest.java"
+          java -cp "$RUNNER_TEMP/offer-guardian-tests" \
+            com.personal.offerguardian.OfferDetectorStandaloneTest
 
       - name: Build installable debug APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace --project-dir "$PROJECT_DIR" :app:assembleDebug
 
-      - name: Show APK checksum
-        run: sha256sum app/build/outputs/apk/debug/app-debug.apk
+      - name: Prepare APK download and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" dist/OfferGuardian-debug.apk
+          sha256sum dist/OfferGuardian-debug.apk
 
       - name: Make APK available to download
         uses: actions/upload-artifact@v6
         with:
           name: OfferGuardian-installable-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: dist/OfferGuardian-debug.apk
           if-no-files-found: error
           retention-days: 30

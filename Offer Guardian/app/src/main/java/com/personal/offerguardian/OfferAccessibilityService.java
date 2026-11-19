@@ -67,6 +67,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private long lastDecisionAt=0;
     private int lastX=-1,lastY=-1;
     private int noOfferFrames=0;
+    private long lastHistoryId=-1;
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
@@ -163,6 +164,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     // for a single long-lived offer, but permits new offers of same price.
                     lastAmount=Double.NaN;
                     lastX=-1;lastY=-1;
+                    lastHistoryId=-1;
                 }
                 source.recycle();capturing=false;
                 status("Screenshot OK; no verified grey X on a green/black offer card. No tap.");return;
@@ -209,11 +211,23 @@ public final class OfferAccessibilityService extends AccessibilityService {
         double payout=a.payout;
         double threshold=Prefs.threshold(prefs);
         long now=SystemClock.elapsedRealtime();
-        // Guard repeated OCR frames of the same offer. The next genuinely different
-        // payout is handled immediately; same payout re-arms after 25s.
-        if(!Double.isNaN(lastAmount) && Math.abs(lastAmount-payout)<.005 &&
+        // Persist a new card once, even when TEST ONLY is on or no tap is possible.
+        // Each subsequent screenshot of the same visible card updates missing OCR data
+        // but cannot generate another history entry.
+        boolean sameOffer=lastHistoryId>0 && !Double.isNaN(lastAmount) &&
+                Math.abs(lastAmount-payout)<.005 &&
                 now-lastDecisionAt<REPEAT_GUARD_MS &&
-                Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3) {
+                Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3;
+        try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+            OfferDetailsParser.Details details=OfferDetailsParser.parse(visual.y,lines);
+            if(sameOffer) store.fillMissing(lastHistoryId,details);
+            else lastHistoryId=store.record((int)Math.round(payout*100),details);
+        } catch(Exception e) {
+            status("History save failed: "+e.getClass().getSimpleName()+". Monitoring continues.");
+        }
+        // Guard repeated OCR frames of the same offer. A visibly vanished card
+        // re-arms the recorder; different payouts are handled immediately.
+        if(sameOffer) {
             status(String.format(Locale.US,
                     "A$%.2f: same offer already evaluated; suppressing repeat action.",payout));
             return;
@@ -252,6 +266,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         Path path=new Path();path.moveTo(x,y);
         GestureDescription gesture=new GestureDescription.Builder()
             .addStroke(new GestureDescription.StrokeDescription(path,0,90)).build();
+        final long declinedHistoryId=lastHistoryId;
         boolean accepted=dispatchGesture(gesture,new GestureResultCallback() {
             @Override public void onCompleted(GestureDescription gesture) {
                 status(String.format(Locale.US,"A$%.2f: X gesture completed. Uber decline NOT independently confirmed.",payout));
@@ -260,6 +275,11 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 status(String.format(Locale.US,"A$%.2f: X gesture cancelled; decline not confirmed.",payout));
             }
         },null);
+        if(accepted) {
+            try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+                store.markDeclineAttempt(declinedHistoryId);
+            } catch(Exception ignored) { /* Gesture status remains in diagnostics. */ }
+        }
         status(String.format(Locale.US,accepted?"A$%.2f: X tap dispatched; awaiting Android response.":
                 "A$%.2f: Android rejected X gesture; no tap.",payout));
     }

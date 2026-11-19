@@ -1,7 +1,7 @@
-# Full replacement (not a patch)
+# Full replacement — NOT a patch
 
-**Do not upload the containing `OfferGuardian_v0.4.0` directory or the ZIP itself into the repository.** Extract and upload the files within it to the GitHub repository root.
+This ZIP is Offer Guardian **v0.5.0**, including all source code and the updated GitHub APK workflow.
 
-Root must contain: `.github/workflows/build-apk.yml`, `app/`, `tests/`, `build.gradle`, `settings.gradle`, `gradle.properties`, and this README. Older nested folders may coexist temporarily; the workflow selects v0.4.0 only. Delete old nested copies and old `android.yml` when practical to prevent confusion.
+Use **Add file → Upload files** from the top-level repository, and upload the ZIP's contents (including `.github`, `app`, `tests`, and the root Gradle files). Keep the folders intact. Do not upload a second nested `OfferGuardianAndroid` folder. The workflow skips older versions automatically and produces a v0.5.0 APK artifact if compilation succeeds.
 
-If the new APK cannot overwrite the previous debug-signed app due to different signatures, uninstall the old version, install the new APK, and reconfigure Accessibility/settings. The project is a complete source build, not an APK already compiled.
+No earlier ZIPs or patches are required. The new Offer History button appears near the top of the app. See README for how outcomes are classified, local-data retention, A$/km and export.

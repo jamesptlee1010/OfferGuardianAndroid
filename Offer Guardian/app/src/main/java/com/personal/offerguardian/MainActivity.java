@@ -165,7 +165,11 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.4.0  ·  Independent $30+ alerts  ·  Australia", 13, MUTED, false), lp(-2, 20));
+        root.addView(text("v0.5.0  ·  Offer history + payout/km  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        LinearLayout historyLaunch=card(root,"Offer History · Concept B",
+                "Browse every detected offer, accepted-only requests, and highest payouts. See pickup, destination, estimated kilometres and AUD/km.");
+        button(historyLaunch,"Open Offer History  →",true,
+                v -> startActivity(new Intent(this,OfferHistoryActivity.class)));
 
         LinearLayout settings = card(root, "Your delivery rule", "Minimum payout (AUD). Exactly A$30.00 counts as a high offer.");
         amountInput = new EditText(this);
@@ -326,7 +330,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.4.0\n"+
+            String report="Offer Guardian v0.5.0\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {

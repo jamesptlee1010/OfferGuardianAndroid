@@ -43,12 +43,12 @@ import java.util.Locale;
 public final class MainActivity extends Activity {
     private static final int INK = Color.rgb(19, 31, 47);
     private static final int MUTED = Color.rgb(97, 112, 130);
-    private static final int ACCENT = Color.rgb(18, 102, 179);
-    private static final int BG = Color.rgb(245, 247, 250);
+    private static final int ACCENT = Color.rgb(10, 132, 66);
+    private static final int BG = Color.rgb(246, 249, 247);
     private SharedPreferences prefs;
     private TextView accessStatus, lastStatus, historyStatus;
     private Switch monitorSwitch, autoSwitch, alertSwitch, visualSwitch, visualTestSwitch;
-    private EditText amountInput;
+    private TextView rulesSummary;
     private TextView alertVolumeLabel;
 
     @Override public void onCreate(Bundle state) {
@@ -165,24 +165,21 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.5.0  ·  Offer history + payout/km  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v0.7.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
-                "Browse every detected offer, accepted-only requests, and highest payouts. See pickup, destination, estimated kilometres and AUD/km.");
+                "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
                 v -> startActivity(new Intent(this,OfferHistoryActivity.class)));
 
-        LinearLayout settings = card(root, "Your delivery rule", "Minimum payout (AUD). Exactly A$30.00 counts as a high offer.");
-        amountInput = new EditText(this);
-        amountInput.setSingleLine(true);
-        amountInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        amountInput.setText(String.format(Locale.US, "%.2f", Prefs.threshold(prefs)));
-        amountInput.setTextSize(26);
-        amountInput.setTextColor(INK);
-        settings.addView(amountInput, lp(56, 8));
-        button(settings, "Save minimum payout", true, v -> saveThreshold());
+        LinearLayout settings = card(root, "Offer Filtering Rules · Concept B",
+                "Add or remove minimum payment, estimated A$/hour, and estimated A$/km conditions. Choose ANY (OR) or ALL (AND).");
+        rulesSummary=text(OfferRuleEngine.summary(Prefs.rules(prefs)),14,ACCENT,true);
+        settings.addView(rulesSummary,lp(-2,12));
+        button(settings,"Open Rules Builder  →",true,
+                v -> startActivity(new Intent(this,OfferRulesActivity.class)));
         monitorSwitch = toggle(settings, "Monitor Uber Driver offers", prefs.getBoolean(Prefs.MONITOR, false));
-        autoSwitch = toggle(settings, "Auto-decline offers BELOW the minimum", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
-        alertSwitch = toggle(settings, "Alert when offers are AT / ABOVE minimum", prefs.getBoolean(Prefs.ALERT, true));
+        autoSwitch = toggle(settings, "Auto-decline offers failing your selected rules", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
+        alertSwitch = toggle(settings, "Sound alert for qualifying or uncertain offers", prefs.getBoolean(Prefs.ALERT, true));
         monitorSwitch.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(Prefs.MONITOR, checked).apply();
             if (checked && !accessibilityEnabled()) {
@@ -205,11 +202,11 @@ public final class MainActivity extends Activity {
             refresh();
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
-        button(settings, "Test rules (Delivery + Match)", false, v -> testExamples());
+        button(settings, "Preview example rules", false, v -> testExamples());
         // Standalone alerts do NOT rely on Uber Driver's notification sounds.
         LinearLayout audio = card(root, "High-value offer sound",
                 "Uber Driver can be silenced separately in Android notification settings. " +
-                "Offer Guardian plays its own bundled tone when an offer meets your minimum. " +
+                "Offer Guardian plays its own bundled tone when an offer meets your rules. " +
                 "Do not mute the whole phone or use Do Not Disturb for this setup.");
         Switch audioAlarm = toggle(audio, "Use ALARM volume (recommended)",
                 prefs.getBoolean(Prefs.AUDIO_USE_ALARM,true));
@@ -330,7 +327,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.5.0\n"+
+            String report="Offer Guardian v0.7.0\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {
@@ -347,29 +344,16 @@ public final class MainActivity extends Activity {
         refresh();
     }
 
-    private void saveThreshold() {
-        try {
-            float value = Float.parseFloat(amountInput.getText().toString().trim());
-            if (Float.isNaN(value) || value < 1 || value > 1000) throw new NumberFormatException();
-            prefs.edit().putFloat(Prefs.THRESHOLD, Math.round(value * 100f) / 100f).apply();
-            Toast.makeText(this, String.format(Locale.US, "Minimum set to A$%.2f", value), Toast.LENGTH_LONG).show();
-        } catch (NumberFormatException e) {
-            new AlertDialog.Builder(this).setTitle("Invalid minimum")
-                    .setMessage("Enter an AUD amount between $1 and $1,000 (for example, 30.00).")
-                    .setPositiveButton("OK", null).show();
-        }
-    }
-
     private void testExamples() {
-        OfferDetector.Result low = OfferDetector.detect(Arrays.asList("Delivery", "$14.50", "Accept"));
-        OfferDetector.Result high = OfferDetector.detect(Arrays.asList("Pack & Deliver (3)", "A$30.59", "Match"));
-        float limit = Prefs.threshold(prefs);
-        String message = String.format(Locale.US,
-                "A$%.2f: %s\n\nA$%.2f: %s\n\nThis only tests payout logic. It does not press any Uber Driver buttons.",
-                low.payout, low.payout < limit ? "BELOW threshold" : "AT / ABOVE threshold",
-                high.payout, high.payout < limit ? "BELOW threshold" : "AT / ABOVE threshold");
+        OfferRuleEngine.Config c=Prefs.rules(prefs);
+        OfferRuleEngine.Decision a=OfferRuleEngine.evaluate(c,20,27,5000);
+        OfferRuleEngine.Decision b=OfferRuleEngine.evaluate(c,35,60,20000);
+        String message="Current rules: "+OfferRuleEngine.summary(c)+"\n\n"+
+                "A$20 / 27 min / 5 km: "+a.outcome+"\n"+
+                "A$35 / 60 min / 20 km: "+b.outcome+"\n\n"+
+                "This preview does not press Uber Driver buttons.";
         new AlertDialog.Builder(this).setTitle("Rule simulation")
-                .setMessage(message).setPositiveButton("OK", null).show();
+                .setMessage(message).setPositiveButton("OK",null).show();
     }
 
     private boolean accessibilityEnabled() {
@@ -398,6 +382,7 @@ public final class MainActivity extends Activity {
     }
 
     private void refresh() {
+        if (rulesSummary!=null)rulesSummary.setText(OfferRuleEngine.summary(Prefs.rules(prefs)));
         if (accessStatus == null) return;
         boolean access = accessibilityEnabled();
         accessStatus.setText(access ? "✓ Accessibility service ENABLED" : "! Accessibility service NOT ENABLED");

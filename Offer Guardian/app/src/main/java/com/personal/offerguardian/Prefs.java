@@ -16,7 +16,13 @@ final class Prefs {
     static final String AUDIO_REPEAT = "audio_repeat";
     static final String AUDIO_TONE = "audio_tone";
     static final String AUDIO_VIBRATE = "audio_vibrate";
-    static final String THRESHOLD = "threshold";
+    static final String THRESHOLD = "threshold"; // Former minimum; remains the price rule value.
+    static final String RULE_PRICE = "rule_price_enabled";
+    static final String RULE_HOURLY = "rule_hour_enabled";
+    static final String RULE_KM = "rule_km_enabled";
+    static final String RULE_MIN_HOUR = "rule_min_hour";
+    static final String RULE_MIN_KM = "rule_min_km";
+    static final String RULE_MODE = "rule_combine_mode";
     static final String LEARNING = "learning";
     static final String PENDING = "pending";
     static final String PENDING_ID = "pending_id";
@@ -51,5 +57,13 @@ final class Prefs {
     }
     static float threshold(SharedPreferences p) {
         return p.getFloat(THRESHOLD, 30.0f);
+    }
+    static OfferRuleEngine.Config rules(SharedPreferences p) {
+        String selection=p.getString(RULE_MODE,"ANY");
+        OfferRuleEngine.Mode mode="ALL".equals(selection)?OfferRuleEngine.Mode.ALL:OfferRuleEngine.Mode.ANY;
+        return new OfferRuleEngine.Config(
+            p.getBoolean(RULE_PRICE,true),threshold(p),
+            p.getBoolean(RULE_HOURLY,false),p.getFloat(RULE_MIN_HOUR,40.0f),
+            p.getBoolean(RULE_KM,false),p.getFloat(RULE_MIN_KM,3.0f),mode);
     }
 }

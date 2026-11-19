@@ -1,42 +1,55 @@
-# Offer Guardian v0.5.0 — Concept B Offer History
+# Offer Guardian v0.7.0 — Concept B Rules & History
 
-A complete Android Studio / GitHub Actions project updated from **Offer Guardian v0.4.0**. This is **source code**, not a compiled APK. The live X detector, screen monitoring, optional automatic-decline logic and independent high-offer alerts from v0.4.0 are retained.
+**Complete Android Studio / GitHub Actions project**, based on v0.5.0. This ZIP contains source and a GitHub workflow, **not a precompiled APK**. No Uber API or login is used.
 
-## New in v0.5.0
+## New: Offer Rules Builder
 
-Open **Offer History · Concept B** from the top of the main app.
+Open **Offer Filtering Rules → Open Rules Builder** in the app. Add or remove any of these conditions:
 
-- **All offers:** chronological, scrollable records of Uber Driver requests detected while the Accessibility service monitors the Uber screen.
-- **Accepted:** only requests confirmed as accepted in Offer Guardian.
-- **Highest:** offers ranked by their advertised estimated payout.
-- **Per-offer details:** date and local time, advertised AUD payout, Delivery/Pack & Deliver, *pickup displayed on offer*, *approximate destination displayed on offer*, estimated trip duration, estimated kilometres and the calculated rate **A$/km = estimated payout ÷ estimated kilometres**.
-- **Today / all dates**, pickup/destination search, **CSV export**, clear with confirmation, and 35-row incremental display.
-- **Outcome selector:** tap any offer to mark **Accepted**, **Declined**, **Expired**, or **Unknown**.
-- **Automatic recording:** new recognised offer cards are stored in a private local SQLite database even in TEST ONLY mode. Consecutive OCR frames of the same visible card are deduplicated. No network permissions or background servers are used.
+1. **Minimum total payout** — e.g. A$30 per offer.
+2. **Minimum gross hourly estimate** — payout × 60 ÷ advertised minutes, e.g. A$40/hr.
+3. **Minimum gross payout per kilometre** — payout ÷ advertised kilometres, e.g. A$3/km.
 
-## Important accuracy limitations
+Select **ANY (OR)** to alert for an offer meeting *at least one* enabled condition, or **ALL (AND)** to require *every* enabled condition. Exactly equal values pass. For example, with ANY, a A$20 order estimated at 27 minutes qualifies because its estimated A$44.44/hr meets an A$40/hr requirement even if the A$30 payment requirement fails. With ALL it fails.
 
-- Uber Driver does **not reliably provide a manual acceptance/decline event** to Accessibility. The app must not guess an outcome from the card simply disappearing. A verified payout and card result is stored with **Unknown** outcome until a user updates it. An automated X gesture is tracked internally as **DECLINE_REQUESTED**, not claimed as a confirmed decline. The accepted-only view shows records that have actually been marked Accepted.
-- The pickup and dropoff labels are captured from **the offer card's visible OCR text**. In some layouts text may be incomplete, truncated, or simply not readable. Missing details display **Not readable on offer** rather than fabricated addresses.
-- **A$/km** is based on Uber's *estimated* payout and *advertised* distance, not the final payout, kilometres actually driven, vehicle costs or net earnings. N/A appears when the distance is missing or zero.
-- The original screenshot-based detection is calibrated for the phone and Uber layouts previously supplied. If the app cannot verify the grey X, border and payout, **no automated action occurs and no offer is logged**. Monitoring must be enabled, Accessibility connected, and Uber Driver in the foreground.
-- Same-payout, same-position offers arriving very close together without a card-free interval might be grouped; the recorder is conservative about duplicates. Review the history for completeness.
-- **Historical offers from before installing v0.5.0 cannot be recovered** by the app. It starts logging new detected offers from installation onward.
-- **Data persists across normal app closes** and same-signature APK upgrades, but **uninstalling the app erases local history**. Export a CSV before uninstalling. GitHub-generated debug APKs may have changing signing keys, so future debug builds might require an uninstall.
+The new Rules page follows the approved **Concept B light/green design** and includes editable controls, Remove/Add Rule, save settings, and three updating sample offers. Newly upgraded apps preserve the previous $30 payment rule alone; hourly and kilometre conditions are disabled until added. All rules save to the same private Android preferences.
 
-## First use
+### Runtime safety behavior
 
-1. Install the v0.5.0 debug APK produced by GitHub Actions and confirm **Settings → Apps → Offer Guardian → App info → version 0.5.0**.
-2. Open Offer Guardian. Check Android Accessibility is enabled and **Monitor Uber Driver offers** is on. Preserve your existing high-value alerts and $30 minimum.
-3. **Keep TEST ONLY on** until you've checked recognition on actual offers. Saving history does not require active auto-decline.
-4. When safely parked, allow a new offer to appear in Uber Driver. Return to Offer Guardian → **Open Offer History** to see it.
-5. Tap a record to verify pickup, destination, estimated time, distance and A$/km. If you know you accepted or declined, tap **Set outcome** and select the result.
-6. Use **Today / All dates**, **Accepted / Highest**, Search, and **Export CSV** as needed.
+- **SHOW:** a qualifying request plays the existing independent Offer Guardian alert (when alerts are enabled) and is left for manual acceptance/decline.
+- **DECLINE:** an offer failing selected criteria can use the existing verified visual X gesture, but **only** if auto-decline is on and **TEST ONLY is off**.
+- **REVIEW:** if the payout, OCR minutes, or kilometres needed for an enabled rule are unavailable, the app does **not** auto-decline. It reports the missing fields and alerts for manual review if alerts are enabled. Subsequent OCR frames can fill missing time/distance, triggering re-evaluation without duplicate history records.
+- Screen recognition still requires an active Uber Driver foreground, a fresh screenshot, a verified grey X, the offer-card border, and payout OCR tied to that same card. There is no automatic acceptance and no blind coordinate taps.
+- A completed Android tap is not proof Uber actually declined: the history records a decline attempt, while the outcome remains Unknown until confirmed.
 
-## Build
+## History upgrades
 
-See `GITHUB_BUILD_GUIDE.md`. The `.github/workflows/build-apk.yml` workflow installs Android SDK 35, Gradle 8.9 and Java 17 on GitHub Actions (no `gradlew` required), runs pure-Java tests, builds an APK, and verifies it reports `versionName='0.5.0'`.
+The existing **All Offers / Accepted / Highest** tabs retain pickup, approximate destination, estimated distance and local timestamps, with **estimated A$/hour alongside A$/km** in offer rows, offer details and CSV exports. The history page also shows current active-rule settings and links to the Rules Builder.
 
-## Local history/privacy
+All payouts, hourly rates, and per-kilometre rates are estimates from Uber offer-card data, **not final earnings or net profit**. Missing time/distance shows N/A. Outcome detection remains conservative: manual acceptance or decline may need to be marked explicitly.
 
-Uses `SQLiteOpenHelper` on the phone, no account login, and no INTERNET permission. Location labels are captured only from visible offer cards. Exported CSVs contain locations and must be handled carefully. No guarantee that Uber permits automation, and repetitive auto-declines may affect the user's account. The application is independent of Uber.
+## Keeping your existing data
+
+Install as an **update to the existing app** when possible. Normal updates with the same applicationId and signing certificate preserve history/settings. GitHub Actions debug keys may differ across builds, so Android might require uninstalling older builds; **uninstalling erases SQLite history**. Export existing Offer History to CSV *before* uninstalling. CSV export is not an automatic restore/import.
+
+## Installation using GitHub
+
+Upload the **contents** of this ZIP to the repository root (`app/`, `.github/`, `build.gradle`, etc.), replacing the older source rather than nesting another `OfferGuardianAndroid/` folder. Commit changes, run **Build Offer Guardian APK** in GitHub Actions, and download `OfferGuardian-v0.7.0-installable-APK` when the build succeeds. The workflow selects an actual `0.7.0` source tree, runs pure-Java tests, compiles using Java 17 / Gradle 8.9 / SDK 35, and checks the resulting APK version.
+
+After installing, verify the app says **0.7.0**. Start with **TEST ONLY enabled** and verify monitoring diagnostics for a few real offers before allowing real auto-declines. Test both an OR rule that rescues a below-price but high-hourly offer and an AND rule. You may need to re-enable Accessibility if the app was uninstalled.
+
+**Limitations:** ML Kit offline OCR is fallible; app needs Android 11+ for Accessibility screenshot capture and the Uber Driver screen in the foreground. Exact pickup/delivery addresses cannot always be read from the incoming offer. Some Uber internal notification audio cannot be silenced by this app. Automated declinations can affect Uber account standing. No Internet permission, no hidden data transfers, no guarantee of compatibility with future Uber screens.
+
+## New in v0.7.0 — History average summaries
+
+The approved Concept B green/white Offer History now displays **Average Offer**, **Average A$/hour**, and **Average A$/km**.
+
+- **All Offers:** Total, Accepted, Declined, Highest Offer, then all three averages.
+- **Accepted:** Accepted count and all three averages calculated **only from offers confirmed Accepted**, not all Uber offers.
+- **Highest:** Highest offer and averages of offers in the current search/date filter; offers are ranked by gross payout.
+- **Period picker:** Today, Last 7 days, Last 30 days, or All dates. Search filters both the list and the summary.
+- Averages include **all** matching stored offers, not merely the 35–100 rows currently rendered.
+- Average offer is an arithmetic mean of all matching payouts. Average hourly rate is an arithmetic mean of per-offer gross hourly estimates (payout / advertised time × 60); average $/km is the arithmetic mean of per-offer payout / advertised kilometres. Entries missing time/distance are **excluded only from their respective rate average**. If no qualifying offers exist, show a dash, never $0.00.
+- Summary values update after the user confirms or changes an offer's outcome. All data stays in the original database; **no migration or history wipe**.
+
+**Build:** GitHub Actions publishes `OfferGuardian-v0.7.0-installable-APK` only after payout, rate, filter-rule and summary tests pass and the Android APK has compiled. The source was not compiled to an APK in the current environment.

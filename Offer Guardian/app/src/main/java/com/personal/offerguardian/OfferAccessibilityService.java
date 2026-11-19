@@ -68,6 +68,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private int lastX=-1,lastY=-1;
     private int noOfferFrames=0;
     private long lastHistoryId=-1;
+    private OfferRuleEngine.Outcome lastOutcome=null;
+    private boolean reviewAlerted=false;
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
@@ -165,6 +167,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     lastAmount=Double.NaN;
                     lastX=-1;lastY=-1;
                     lastHistoryId=-1;
+                    lastOutcome=null;
+                    reviewAlerted=false;
                 }
                 source.recycle();capturing=false;
                 status("Screenshot OK; no verified grey X on a green/black offer card. No tap.");return;
@@ -209,49 +213,74 @@ public final class OfferAccessibilityService extends AccessibilityService {
         OfferScreenEvaluator.Assessment a=OfferScreenEvaluator.assess(visual,lines);
         if(!a.valid) {status("X found, but " + a.reason + ". No tap.");return;}
         double payout=a.payout;
-        double threshold=Prefs.threshold(prefs);
         long now=SystemClock.elapsedRealtime();
-        // Persist a new card once, even when TEST ONLY is on or no tap is possible.
-        // Each subsequent screenshot of the same visible card updates missing OCR data
-        // but cannot generate another history entry.
+        // New offers are saved once. Subsequent OCR frames can fill missing
+        // duration or kilometres without generating extra history rows.
         boolean sameOffer=lastHistoryId>0 && !Double.isNaN(lastAmount) &&
                 Math.abs(lastAmount-payout)<.005 &&
                 now-lastDecisionAt<REPEAT_GUARD_MS &&
                 Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3;
+        OfferDetailsParser.Details parsed=OfferDetailsParser.parse(visual.y,lines);
+        int minutes=parsed.minutes, metres=parsed.metres;
         try(OfferHistoryStore store=new OfferHistoryStore(this)) {
-            OfferDetailsParser.Details details=OfferDetailsParser.parse(visual.y,lines);
-            if(sameOffer) store.fillMissing(lastHistoryId,details);
-            else lastHistoryId=store.record((int)Math.round(payout*100),details);
+            if(sameOffer) {
+                store.fillMissing(lastHistoryId,parsed);
+                OfferHistoryStore.Item saved=store.byId(lastHistoryId);
+                if(saved!=null) {minutes=saved.minutes;metres=saved.metres;}
+            } else {
+                lastHistoryId=store.record((int)Math.round(payout*100),parsed);
+            }
         } catch(Exception e) {
             status("History save failed: "+e.getClass().getSimpleName()+". Monitoring continues.");
         }
-        // Guard repeated OCR frames of the same offer. A visibly vanished card
-        // re-arms the recorder; different payouts are handled immediately.
-        if(sameOffer) {
+        // When an OCR frame lacks time or distance, retry on the same visible
+        // card. Do not lock it into the repeat guard until a final decision.
+        if(sameOffer && lastOutcome!=OfferRuleEngine.Outcome.REVIEW) {
             status(String.format(Locale.US,
                     "A$%.2f: same offer already evaluated; suppressing repeat action.",payout));
             return;
         }
-        lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
+        if(!sameOffer) {
+            lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
+            lastOutcome=null;reviewAlerted=false;
+        }
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
-        if(payout>=threshold) {
-            if(OfferAlertRules.shouldRing(payout,threshold,prefs.getBoolean(Prefs.ALERT,true))) {
+        OfferRuleEngine.Decision decision=OfferRuleEngine.evaluate(Prefs.rules(prefs),payout,minutes,metres);
+        String rates=String.format(Locale.US," (time: %s; distance: %s; A$/hr: %s; A$/km: %s)",
+                minutes>0?minutes+" min":"unknown",
+                metres>0?String.format(Locale.US,"%.1f km",metres/1000.0):"unknown",
+                Double.isNaN(decision.hourly)?"unknown":String.format(Locale.US,"%.2f",decision.hourly),
+                Double.isNaN(decision.perKm)?"unknown":String.format(Locale.US,"%.2f",decision.perKm));
+        if(decision.outcome==OfferRuleEngine.Outcome.REVIEW) {
+            lastOutcome=OfferRuleEngine.Outcome.REVIEW;
+            if(!reviewAlerted && prefs.getBoolean(Prefs.ALERT,true)) {
+                reviewAlerted=true;
+                OfferAlert.signal(this,payout);
+            }
+            status(String.format(Locale.US,
+                    "A$%.2f — MANUAL REVIEW, no tap. %s%s",payout,decision.reason,rates));
+            return;
+        }
+        lastOutcome=decision.outcome;
+        if(decision.outcome==OfferRuleEngine.Outcome.SHOW) {
+            if(prefs.getBoolean(Prefs.ALERT,true)) {
                 boolean started=OfferAlert.signal(this,payout);
                 status(String.format(Locale.US,
-                        started ? "A$%.2f >= A$%.2f. Independent sound STARTED; you decide. No tap." :
-                                  "A$%.2f >= A$%.2f. Sound COULD NOT START (check volume/settings). No tap.",
-                        payout,threshold));
-            } else status(String.format(Locale.US,"A$%.2f >= A$%.2f. Alerts off; no tap.",payout,threshold));
+                        "A$%.2f — QUALIFIES; %s. %s; no tap.%s",
+                        payout,decision.reason,started?"Independent alert started":"Sound could not start",rates));
+            } else status(String.format(Locale.US,
+                    "A$%.2f — QUALIFIES; %s. Alerts off; no tap.%s",payout,decision.reason,rates));
             return;
         }
         if(prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
-            status(String.format(Locale.US,"TEST ONLY: A$%.2f < A$%.2f. X at (%d,%d), %.0f%%. No tap.",
-                    payout,threshold,visual.x,visual.y,visual.confidence*100));
+            status(String.format(Locale.US,"TEST ONLY: A$%.2f — FAILS rules; %s. X at (%d,%d), %.0f%%. No tap.%s",
+                    payout,decision.reason,visual.x,visual.y,visual.confidence*100,rates));
             return;
         }
         if(!prefs.getBoolean(Prefs.AUTO_DECLINE,false)) {
-            status(String.format(Locale.US,"A$%.2f below A$%.2f. Auto-decline OFF. No tap.",payout,threshold));
+            status(String.format(Locale.US,"A$%.2f — FAILS rules; %s. Auto-decline OFF. No tap.%s",
+                    payout,decision.reason,rates));
             return;
         }
         if(!prefs.getBoolean(Prefs.VISUAL_X,true) || !isUberForeground()) {

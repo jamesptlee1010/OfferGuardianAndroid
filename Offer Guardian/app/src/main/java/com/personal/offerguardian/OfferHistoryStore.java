@@ -93,20 +93,33 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         o.destination=cur.getString(5);o.minutes=cur.getInt(6);o.metres=cur.getInt(7);
         o.outcome=cur.getString(8);o.action=cur.getString(9);return o;
     }
-    public synchronized List<Item> list(String tab, String search, boolean todayOnly,int limit,int offset) {
+    /** Shared filtering for the list and the stats, so their figures always agree. */
+    private static final class Filter {
+        final String where;
+        final List<String> args;
+        Filter(String w,List<String> a) {where=w;args=a;}
+    }
+    private Filter filter(String tab,String search,long firstIncludedMillis) {
         StringBuilder where=new StringBuilder("1=1");
         List<String> args=new ArrayList<>();
         if("ACCEPTED".equals(tab)) where.append(" AND outcome='ACCEPTED'");
-        if(todayOnly) {where.append(" AND seen_at>=?");args.add(Long.toString(todayStart()));}
+        if(firstIncludedMillis>0) {
+            where.append(" AND seen_at>=?");
+            args.add(Long.toString(firstIncludedMillis));
+        }
         if(search!=null && !search.trim().isEmpty()) {
             where.append(" AND (pickup LIKE ? OR destination LIKE ? OR type LIKE ?)");
             String token="%"+search.trim()+"%";
-            // Search is local only; literal wildcard matches are harmless in this view.
             args.add(token);args.add(token);args.add(token);
         }
+        return new Filter(where.toString(),args);
+    }
+    public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,int limit,int offset) {
+        Filter filter=filter(tab,search,firstIncludedMillis);
+        List<String> args=new ArrayList<>(filter.args);
         String order="HIGHEST".equals(tab) ? "payout_cents DESC, seen_at DESC":"seen_at DESC";
         String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action "+
-            "FROM offers WHERE "+where+" ORDER BY "+order+" LIMIT ? OFFSET ?";
+            "FROM offers WHERE "+filter.where+" ORDER BY "+order+" LIMIT ? OFFSET ?";
         args.add(Integer.toString(Math.max(1,Math.min(100,limit))));
         args.add(Integer.toString(Math.max(0,offset)));
         List<Item> list=new ArrayList<>();
@@ -114,6 +127,16 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             while(c.moveToNext())list.add(parse(c));
         }
         return list;
+    }
+    /** Aggregates all matching rows, not just the first page displayed on screen. */
+    public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis) {
+        Filter filter=filter(tab,search,firstIncludedMillis);
+        OfferHistoryStats stats=new OfferHistoryStats();
+        String sql="SELECT payout_cents,minutes,metres,outcome FROM offers WHERE "+filter.where;
+        try(Cursor c=getReadableDatabase().rawQuery(sql,filter.args.toArray(new String[0]))) {
+            while(c.moveToNext())stats.add(c.getInt(0),c.getInt(1),c.getInt(2),c.getString(3));
+        }
+        return stats;
     }
     public synchronized Item byId(long id) {
         try(Cursor c=getReadableDatabase().rawQuery("SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action FROM offers WHERE id=?",
@@ -136,14 +159,14 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         c.set(Calendar.SECOND,0);c.set(Calendar.MILLISECOND,0);return c.getTimeInMillis();
     }
     public synchronized String csv() {
-        StringBuilder b=new StringBuilder("Offer time,Estimated payout AUD,Type,Pickup,Destination shown,Estimated minutes,Estimated km,Estimated AUD per km,Outcome,Automation action\r\n");
+        StringBuilder b=new StringBuilder("Offer time,Estimated payout AUD,Type,Pickup,Destination shown,Estimated minutes,Estimated km,Estimated AUD per km,Estimated AUD per hour,Outcome,Automation action\r\n");
         for(Item v:allRowsForExport()) {
             String when=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.getDefault()).format(new Date(v.seenAt));
             append(b,when);append(b,String.format(Locale.US,"%.2f",v.cents/100.0));
             append(b,v.type);append(b,v.pickup);append(b,v.destination);
             append(b,v.minutes==0?"":Integer.toString(v.minutes));
             append(b,v.metres==0?"":String.format(Locale.US,"%.1f",v.metres/1000.0));
-            append(b,OfferRate.dollarsPerKm(v.cents,v.metres));append(b,v.outcome);append(b,v.action);
+            append(b,OfferRate.dollarsPerKm(v.cents,v.metres));append(b,OfferRate.dollarsPerHour(v.cents,v.minutes));append(b,v.outcome);append(b,v.action);
             b.append("\r\n");
         }return b.toString();
     }

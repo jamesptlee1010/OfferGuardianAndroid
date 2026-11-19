@@ -12,6 +12,13 @@ public final class OfferRate {
         return String.format(Locale.US, "A$%.2f/km", audPerKm);
     }
 
+    /** Estimated gross hourly earning rate based on Uber's stated minutes. */
+    public static String dollarsPerHour(int payoutCents, int estimatedMinutes) {
+        if (estimatedMinutes <= 0 || payoutCents < 0) return "N/A";
+        double audPerHour = payoutCents * 0.6 / estimatedMinutes;
+        return String.format(Locale.US, "A$%.2f/hr", audPerHour);
+    }
+
     public static String distance(int metres) {
         if (metres <= 0) return "Distance unknown";
         return String.format(Locale.US, "%.1f km", metres / 1000.0);

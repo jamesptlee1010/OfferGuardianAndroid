@@ -43,7 +43,7 @@ public final class MainActivity extends Activity {
     private SharedPreferences prefs;
     private TextView accessStatus, calibrationStatus, lastStatus;
     private Button confirmButton, discardButton, learnButton;
-    private Switch monitorSwitch, autoSwitch, alertSwitch, coordinateSwitch;
+    private Switch monitorSwitch, autoSwitch, alertSwitch, coordinateSwitch, visualSwitch, visualTestSwitch;
     private EditText amountInput;
 
     @Override public void onCreate(Bundle state) {
@@ -167,7 +167,8 @@ public final class MainActivity extends Activity {
         });
         autoSwitch.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(Prefs.AUTO_DECLINE, checked).apply();
-            if (checked && !prefs.getBoolean(Prefs.CALIBRATED, false)) {
+            if (checked && !prefs.getBoolean(Prefs.CALIBRATED, false) &&
+                    !prefs.getBoolean(Prefs.VISUAL_X, false)) {
                 new AlertDialog.Builder(this).setTitle("Calibration required")
                         .setMessage("Automatic decline is not active until you teach the app the actual Decline control and approve the capture. No unknown buttons will be tapped.")
                         .setPositiveButton("OK", null).show();
@@ -184,7 +185,39 @@ public final class MainActivity extends Activity {
         button(access, "Open Accessibility settings", false, v -> openAccessibility());
         button(access, "Open Uber Driver", false, v -> openUber());
 
-        LinearLayout calibration = card(root, "Learn the Decline button", "Some Uber screens use an X icon instead of a labelled Decline button. This lets you teach the app that control using one real, manual decline.");
+        LinearLayout visual = card(root, "Visual X recognition (NEW)",
+                "Based on the two Uber Eats screenshots you supplied. The X is located relative to the green offer-card border, rather than a fixed screen position. New layouts fail safely.");
+        visualSwitch = toggle(visual, "Recognise X visually from Uber screenshots",
+                prefs.getBoolean(Prefs.VISUAL_X, false));
+        visualTestSwitch = toggle(visual, "TEST ONLY — locate X without tapping (recommended first)",
+                prefs.getBoolean(Prefs.VISUAL_DRY_RUN, true));
+        visualSwitch.setOnCheckedChangeListener((button, checked) -> {
+            prefs.edit().putBoolean(Prefs.VISUAL_X, checked)
+                    .putBoolean(Prefs.LEARNING, false).putBoolean(Prefs.PENDING, false)
+                    .apply();
+            if (checked) new AlertDialog.Builder(this)
+                    .setTitle("Visual X detection enabled")
+                    .setMessage("The old click-event learning is now stopped. Keep TEST ONLY on. With Uber open, let a below-minimum offer appear and inspect the 'Last recognised offer' status. The app will not tap until you explicitly turn TEST ONLY off AND enable Auto-decline. X matching may fail on different offer layouts.")
+                    .setPositiveButton("OK", null).show();
+            refresh();
+        });
+        visualTestSwitch.setOnCheckedChangeListener((button, checked) -> {
+            if (!checked && prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
+                visualTestSwitch.setChecked(true);
+                new AlertDialog.Builder(this)
+                        .setTitle("Enable real Uber X taps?")
+                        .setMessage("Only do this after you have verified that TEST ONLY reports a correct X location on multiple real offers. A visual recognition error could tap the wrong part of the Uber screen. Using automation may affect your Uber account.")
+                        .setNegativeButton("Keep TEST ONLY", null)
+                        .setPositiveButton("I understand — allow taps", (d,w) -> {
+                            prefs.edit().putBoolean(Prefs.VISUAL_DRY_RUN, false).apply();
+                            visualTestSwitch.setChecked(false);
+                        }).show();
+            } else prefs.edit().putBoolean(Prefs.VISUAL_DRY_RUN, checked).apply();
+        });
+        visual.addView(text("Testing: enable Monitoring and visual recognition. When an under-$30 offer appears, check Last recognised offer for 'Visual TEST passed'. Only after testing, enable Auto-decline and turn off TEST ONLY.",
+                13, MUTED, false), lp(-2,0));
+
+        LinearLayout calibration = card(root, "Legacy click-event learning (optional)", "The old method requires Uber to report a standard button click. On your phone the X does not appear to report one; use Visual X recognition instead.");
         calibrationStatus = text("No calibration saved", 13, MUTED, false);
         calibration.addView(calibrationStatus, lp(-2, 10));
         learnButton = button(calibration, "1. Arm learning (then decline one real offer)", true, v -> armLearning());
@@ -224,7 +257,7 @@ public final class MainActivity extends Activity {
         button(recent, "Refresh status", false, v -> refresh());
 
         LinearLayout note = card(root, "Important limits", null);
-        note.addView(text("This prototype only works when Uber exposes a readable payout and an Accept control. If Uber draws those as images, this version safely skips the offer rather than guessing. Uber's own notification may still sound before a decline. This app never accepts an order. Automatic interactions may carry Uber account risk.",
+        note.addView(text("Visual detection uses the same screenshot for price and X. It refuses to tap if the X or green border does not match the screenshots you supplied. Always test with TEST ONLY enabled first. Uber's own notification may still sound. This app never accepts an order. Automated interaction may carry Uber account risk.",
                 13, MUTED, false), lp(-2, 0));
         root.addView(text("Independent personal utility; not affiliated with or endorsed by Uber.",
                 11, MUTED, false), lp(-2, 0));
@@ -340,6 +373,10 @@ public final class MainActivity extends Activity {
         String summary;
         if (pending) summary = "Captured a control. Check it, then approve or discard below.";
         else if (learning) summary = "Learning armed. Manually tap DECLINE on one real Uber offer.";
+        else if (prefs.getBoolean(Prefs.VISUAL_X, false))
+            summary = "Visual X recognition enabled. " +
+                    (prefs.getBoolean(Prefs.VISUAL_DRY_RUN, true) ? "TEST ONLY — no taps." :
+                     "Real gestures allowed only when Auto-decline is ON.");
         else if (calibrated) summary = "✓ Decline control calibrated. Auto-decline: " +
                 (prefs.getBoolean(Prefs.AUTO_DECLINE, false) ? "ON" : "OFF");
         else summary = "Not calibrated. Automatic decline cannot operate yet.";

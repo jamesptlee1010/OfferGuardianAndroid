@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription;
 import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.hardware.HardwareBuffer;
 import android.os.Build;
 import android.view.Display;
@@ -36,6 +37,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private long lastOcrAt = 0;
     private boolean ocrInProgress = false;
     private TextRecognizer textRecognizer;
+    private int[] visualReference;
+    private boolean lastVisualMatchSucceeded = false;
     private long lastValidOfferAt = 0;
     private double lastHandledPayout = Double.NaN;
     private long lastHandledAt = 0;
@@ -72,6 +75,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
             }
             // Keep recent payout cached to avoid repeated alerts from OCR redraws.
             // A new payout is handled immediately; the same payout is rearmed after 20 seconds.
+            return;
+        }
+        // Visual mode requires the payout and X to be present on the SAME screenshot.
+        // Never act from an accessibility-only payout and a stale coordinate.
+        if (prefs.getBoolean(Prefs.VISUAL_X, false) && result.payout < Prefs.threshold(prefs)) {
+            if (Build.VERSION.SDK_INT >= 30 && now-lastOcrAt >= 850 && !ocrInProgress) runOcrOnUberScreen();
             return;
         }
         handleOffer(result, snapshot.nodes, prefs);
@@ -148,7 +157,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
                                     prefs.getBoolean(Prefs.PENDING, false)) return;
                             Snapshot live = new Snapshot();
                             collect(root, live, 0);
-                            handleOffer(detected, live.nodes, prefs);
+                            if (prefs.getBoolean(Prefs.VISUAL_X, false) &&
+                                    detected.payout < Prefs.threshold(prefs)) {
+                                handleVisualOffer(detected, frame, prefs);
+                            } else {
+                                handleOffer(detected, live.nodes, prefs);
+                            }
                         })
                         .addOnCompleteListener(task -> {
                             frame.recycle();
@@ -159,6 +173,93 @@ public final class OfferAccessibilityService extends AccessibilityService {
         } catch (Exception denied) {
             ocrInProgress = false;
         }
+    }
+
+    /**
+     * Uses a fresh screenshot to verify BOTH the same offer payout AND the X/icon/card
+     * position. By default it only reports what it would do; the user must explicitly
+     * opt into gesture dispatch after observing successful dry-run matches.
+     */
+    private void handleVisualOffer(OfferDetector.Result result, Bitmap screenshot,
+                                   SharedPreferences prefs) {
+        long now = SystemClock.elapsedRealtime();
+        if (!Double.isNaN(lastHandledPayout) &&
+                Math.abs(result.payout - lastHandledPayout) < 0.005 &&
+                now - lastHandledAt < (lastVisualMatchSucceeded ? 20000 : 1800)) return;
+        lastHandledPayout = result.payout;
+        lastHandledAt = now;
+        lastVisualMatchSucceeded = false;
+        if (screenshot == null) return;
+        // A screenshot without the phone's original aspect ratio cannot be calibrated.
+        double aspect = screenshot.getWidth() / (double) screenshot.getHeight();
+        if (Math.abs(aspect - VisualDeclineDetector.WIDTH /
+                (double) VisualDeclineDetector.HEIGHT) > 0.012) {
+            updateStatus(prefs, result.payout,
+                    "Visual test: screenshot dimensions changed — no tap.");
+            return;
+        }
+        if (visualReference == null) {
+            Bitmap template = BitmapFactory.decodeResource(getResources(), R.raw.decline_x_reference);
+            if (template == null) return;
+            visualReference = new int[template.getWidth()*template.getHeight()];
+            template.getPixels(visualReference,0,template.getWidth(),0,0,
+                    template.getWidth(),template.getHeight());
+            template.recycle();
+        }
+        Bitmap normalized = Bitmap.createScaledBitmap(screenshot,
+                VisualDeclineDetector.WIDTH, VisualDeclineDetector.HEIGHT, true);
+        int[] pixels = new int[VisualDeclineDetector.WIDTH*VisualDeclineDetector.HEIGHT];
+        normalized.getPixels(pixels, 0, VisualDeclineDetector.WIDTH, 0, 0,
+                VisualDeclineDetector.WIDTH, VisualDeclineDetector.HEIGHT);
+        if (normalized != screenshot) normalized.recycle();
+        VisualDeclineDetector.Match match = VisualDeclineDetector.locate(pixels,
+                VisualDeclineDetector.WIDTH, VisualDeclineDetector.HEIGHT,
+                visualReference, 41, 41);
+        if (!match.found) {
+            updateStatus(prefs, result.payout,
+                    "Visual test: could not verify X and green card border; no tap.");
+            return;
+        }
+        lastVisualMatchSucceeded = true;
+        float x = match.x * screenshot.getWidth() /
+                (float) VisualDeclineDetector.WIDTH;
+        float y = match.y * screenshot.getHeight() /
+                (float) VisualDeclineDetector.HEIGHT;
+        if (prefs.getBoolean(Prefs.VISUAL_DRY_RUN, true) ||
+                !prefs.getBoolean(Prefs.AUTO_DECLINE, false)) {
+            updateStatus(prefs, result.payout,
+                    String.format(java.util.Locale.US,
+                            "Visual TEST passed: X at %.0f, %.0f (%.0f%%); NO TAP. Turn off test mode only after reviewing.",
+                            x, y, 100*match.confidence));
+            return;
+        }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || root.getPackageName() == null ||
+                !UBER_PACKAGE.contentEquals(root.getPackageName()) ||
+                !prefs.getBoolean(Prefs.MONITOR, false) ||
+                prefs.getBoolean(Prefs.LEARNING, false)) {
+            updateStatus(prefs, result.payout,
+                    "Visual test: Uber Driver is no longer foreground; no tap.");
+            return;
+        }
+        Path path = new Path();
+        path.moveTo(x,y);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path,0,85)).build();
+        boolean sent = dispatchGesture(gesture,
+                new GestureResultCallback() {
+                    @Override public void onCompleted(GestureDescription g) {
+                        updateStatus(prefs, result.payout,
+                                "Visual X tap completed; verify the offer was declined.");
+                    }
+                    @Override public void onCancelled(GestureDescription g) {
+                        updateStatus(prefs, result.payout,
+                                "Visual X tap cancelled; no confirmed decline.");
+                    }
+                }, null);
+        updateStatus(prefs,result.payout,sent ?
+                "Visual X gesture dispatched (awaiting result)." :
+                "Visual X gesture rejected; no tap.");
     }
 
     private void updateStatus(SharedPreferences prefs, double amount, String status) {

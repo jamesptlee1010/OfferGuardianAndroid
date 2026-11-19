@@ -1,3 +1,43 @@
+# Offer Guardian v0.2.1 — visual X detection prototype
+
+This build addresses the failure to learn the Uber Driver **X** on an Android phone. The original accessibility click-learning method did not capture the graphical X. Two user-supplied Uber Driver screenshots show a green offer-card top edge and X tile: the top of the card shifts between a Delivery and a Pack & Deliver offer, but the X remains about 74 pixels below the card's green border. The new on-device image detector identifies both features rather than assuming one fixed screen position.
+
+**Status:** Source project and host-tested detection algorithm. Not an installed, compiled, or live-tested APK. Your GitHub Actions runner must compile it. This is an experimental tool; Uber may prohibit automated interaction with its app, and inaccurate interactions could affect your account. Do not use it while actively driving or operating the phone in traffic.
+
+## How to test safely
+
+1. Install the newly compiled APK from GitHub Actions. Its application ID remains unchanged (`com.personal.offerguardian`), so it can replace the existing debug build if the signing certificate matches.
+2. Enable Offer Guardian's Accessibility service and **Monitor Uber Driver offers**.
+3. Select **Recognise X visually from Uber screenshots**. This turns off the old stuck "Learning armed" mode automatically.
+4. Keep **TEST ONLY — locate X without tapping** enabled. This is the default, including for existing installs.
+5. With Uber Driver active, wait for an offer below your saved minimum. When safely parked, return to Offer Guardian, press **Refresh status**, and check whether it says **Visual TEST passed**. Even if Auto-decline is enabled, TEST ONLY never dispatches a gesture.
+6. Verify correct detection on different real offer layouts before considering actual taps. Only if you accept the risk, disable TEST ONLY using the confirmation dialog and enable Auto-decline. Any unmatched image is skipped with **no tap**.
+
+Offers equal to or greater than the threshold remain manual decisions. The app **never automatically accepts** an offer. Uber's own incoming-request alert may still sound.
+
+## Detection safety checks
+
+- Only responds to foreground package `com.ubercab.driver`.
+- Reads both the offer payout and the Accept label using OCR on the **same fresh screenshot**.
+- Requires a matching **green border across the offer-card header** and a high-confidence X pattern within its right corner.
+- Rejects incorrect screenshot aspect ratios, unknown layouts, no detected X, and any screen that does not meet confidence checks.
+- Defaults to no-tap TEST ONLY until explicitly changed.
+- No private Uber API, no networking permission, no automatic acceptance, and no screenshots uploaded to a server.
+- A 41 × 41-pixel visual reference crop of the X is embedded as a resource, containing no personal or location information.
+
+## GitHub build
+
+This project contains `.github/workflows/build-apk.yml`. If you upload into a repository already containing a nested copy, GitHub's workflow chooses the *outermost complete project*. Avoid uploading new duplicated project folders. The output artifact is named `OfferGuardian-installable-APK`.
+
+## Testing performed
+
+- 14 pure Java payout-parser tests.
+- Offline, host-side regression tests find the X at `(579, 737)` for the supplied $6.21 delivery screenshot and `(579, 651)` for the $18.11 Pack & Deliver screenshot, despite different card heights.
+- Unrelated Offer Guardian settings screenshot correctly produces **no X match**.
+- Synthetic positive and negative tests run in the GitHub CI workflow. **These are not a substitute for a complete Android build and real-device testing.**
+
+---
+
 # Offer Guardian — Android prototype (Australia)
 
 **Project status:** Android Studio source code, v0.1.0. The payout parser has been executed and tested on the host, but **the app has not been compiled into an APK or tested against a real Uber Eats request**. It is not affiliated with Uber.

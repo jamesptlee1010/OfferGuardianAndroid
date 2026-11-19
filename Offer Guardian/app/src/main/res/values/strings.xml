@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Offer Guardian</string>
+    <string name="accessibility_description">With your permission, reads visible information from the Uber Driver app to recognise delivery offer amounts. Alerts for offers above your threshold; if you explicitly enable it and calibrate a Decline control, can tap Decline on offers below the threshold. No automatic accepts, no network access, and no screen content is uploaded.</string>
+</resources>

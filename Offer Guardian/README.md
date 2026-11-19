@@ -1,4 +1,4 @@
-# Offer Guardian v0.7.0 — Concept B Rules & History
+# Offer Guardian v0.7.1 — Concept B Rules & History
 
 **Complete Android Studio / GitHub Actions project**, based on v0.5.0. This ZIP contains source and a GitHub workflow, **not a precompiled APK**. No Uber API or login is used.
 
@@ -34,13 +34,13 @@ Install as an **update to the existing app** when possible. Normal updates with 
 
 ## Installation using GitHub
 
-Upload the **contents** of this ZIP to the repository root (`app/`, `.github/`, `build.gradle`, etc.), replacing the older source rather than nesting another `OfferGuardianAndroid/` folder. Commit changes, run **Build Offer Guardian APK** in GitHub Actions, and download `OfferGuardian-v0.7.0-installable-APK` when the build succeeds. The workflow selects an actual `0.7.0` source tree, runs pure-Java tests, compiles using Java 17 / Gradle 8.9 / SDK 35, and checks the resulting APK version.
+Upload the **contents** of this ZIP to the repository root (`app/`, `.github/`, `build.gradle`, etc.), replacing the older source rather than nesting another `OfferGuardianAndroid/` folder. Commit changes, run **Build Offer Guardian APK** in GitHub Actions, and download `OfferGuardian-v0.7.1-installable-APK` when the build succeeds. The workflow selects an actual `0.7.1` source tree, runs pure-Java tests, compiles using Java 17 / Gradle 8.9 / SDK 35, and checks the resulting APK version.
 
-After installing, verify the app says **0.7.0**. Start with **TEST ONLY enabled** and verify monitoring diagnostics for a few real offers before allowing real auto-declines. Test both an OR rule that rescues a below-price but high-hourly offer and an AND rule. You may need to re-enable Accessibility if the app was uninstalled.
+After installing, verify the app says **0.7.1**. Start with **TEST ONLY enabled** and verify monitoring diagnostics for a few real offers before allowing real auto-declines. Test both an OR rule that rescues a below-price but high-hourly offer and an AND rule. You may need to re-enable Accessibility if the app was uninstalled.
 
 **Limitations:** ML Kit offline OCR is fallible; app needs Android 11+ for Accessibility screenshot capture and the Uber Driver screen in the foreground. Exact pickup/delivery addresses cannot always be read from the incoming offer. Some Uber internal notification audio cannot be silenced by this app. Automated declinations can affect Uber account standing. No Internet permission, no hidden data transfers, no guarantee of compatibility with future Uber screens.
 
-## New in v0.7.0 — History average summaries
+## New in v0.7.1 — History average summaries
 
 The approved Concept B green/white Offer History now displays **Average Offer**, **Average A$/hour**, and **Average A$/km**.
 
@@ -52,4 +52,4 @@ The approved Concept B green/white Offer History now displays **Average Offer**,
 - Average offer is an arithmetic mean of all matching payouts. Average hourly rate is an arithmetic mean of per-offer gross hourly estimates (payout / advertised time × 60); average $/km is the arithmetic mean of per-offer payout / advertised kilometres. Entries missing time/distance are **excluded only from their respective rate average**. If no qualifying offers exist, show a dash, never $0.00.
 - Summary values update after the user confirms or changes an offer's outcome. All data stays in the original database; **no migration or history wipe**.
 
-**Build:** GitHub Actions publishes `OfferGuardian-v0.7.0-installable-APK` only after payout, rate, filter-rule and summary tests pass and the Android APK has compiled. The source was not compiled to an APK in the current environment.
+**Build:** GitHub Actions publishes `OfferGuardian-v0.7.1-installable-APK` only after payout, rate, filter-rule and summary tests pass and the Android APK has compiled. The source was not compiled to an APK in the current environment.

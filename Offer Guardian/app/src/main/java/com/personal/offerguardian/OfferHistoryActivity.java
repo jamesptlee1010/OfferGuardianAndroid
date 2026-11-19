@@ -91,7 +91,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.7.0",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.7.1",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -318,6 +318,5 @@ public final class OfferHistoryActivity extends Activity {
             Toast.makeText(this,"Offer history exported",Toast.LENGTH_SHORT).show();
         } catch(Exception e) {Toast.makeText(this,"CSV export failed: "+e.getMessage(),Toast.LENGTH_LONG).show();}
     }
-    @Override protected void onResume() {super.onResume();if(results!=null)refreshList();}
     @Override protected void onDestroy() {if(store!=null)store.close();super.onDestroy();}
 }

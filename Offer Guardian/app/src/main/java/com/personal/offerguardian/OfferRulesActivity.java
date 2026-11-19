@@ -84,7 +84,7 @@ public final class OfferRulesActivity extends Activity {
         header.addView(back,new LinearLayout.LayoutParams(dp(46),dp(48)));
         LinearLayout brand=col();header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         brand.addView(text("Offer Guardian",23,INK,true));
-        brand.addView(text("Offer Rules Builder  ·  v0.7.0",12,MUTED,false));
+        brand.addView(text("Offer Rules Builder  ·  v0.7.1",12,MUTED,false));
         content.addView(text("Choose one, two or three conditions. Only offers meeting your chosen rules are alerted; other verified offers can be declined when auto-decline is enabled.",13,MUTED,false),lp(-2,14));
         LinearLayout monitoring=card(content,12);
         monitoring.setBackground(background(Color.rgb(230,247,235),Color.rgb(173,220,187),12));

@@ -1,0 +1,124 @@
+name: Build Offer Guardian APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Build Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Find Offer Guardian project
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Searching for the Android project...'
+          mapfile -t sources < <(find . -type f \
+            -path '*/app/src/main/java/com/personal/offerguardian/OfferDetector.java' \
+            -not -path '*/.git/*' | sort)
+
+          selected=''
+          best_depth=9999
+          complete_count=0
+
+          for source in "${sources[@]}"; do
+            candidate="${source%/app/src/main/java/com/personal/offerguardian/OfferDetector.java}"
+            complete=true
+            for required in build.gradle settings.gradle app/build.gradle tests/OfferDetectorStandaloneTest.java; do
+              if [ ! -f "$candidate/$required" ]; then
+                echo "Skipping incomplete project: $candidate (missing $required)"
+                complete=false
+                break
+              fi
+            done
+            if [ "$complete" != true ]; then
+              continue
+            fi
+
+            complete_count=$((complete_count + 1))
+            depth=$(awk -F/ '{ print NF }' <<< "$candidate")
+            if [ "$depth" -lt "$best_depth" ]; then
+              best_depth="$depth"
+              selected="$candidate"
+            fi
+          done
+
+          if [ -z "$selected" ]; then
+            echo '::error::No complete Offer Guardian Android project was found.'
+            echo 'Check that the project includes app/, tests/, settings.gradle and build.gradle.'
+            exit 1
+          fi
+
+          if [ "$complete_count" -gt 1 ]; then
+            echo "::warning::Found $complete_count copies; using the outermost complete project: $selected"
+          fi
+
+          project_dir="$(realpath "$selected")"
+          echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
+          echo "Using project: $project_dir"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Install Gradle 8.9 (no gradlew required)
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Test payout detection
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/offer-tests"
+          javac -d "$RUNNER_TEMP/offer-tests" \
+            "$PROJECT_DIR/app/src/main/java/com/personal/offerguardian/OfferDetector.java" \
+            "$PROJECT_DIR/tests/OfferDetectorStandaloneTest.java"
+          java -cp "$RUNNER_TEMP/offer-tests" \
+            com.personal.offerguardian.OfferDetectorStandaloneTest
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace --project-dir "$PROJECT_DIR" :app:assembleDebug
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" dist/OfferGuardian-debug.apk
+          sha256sum dist/OfferGuardian-debug.apk
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: OfferGuardian-installable-APK
+          path: dist/OfferGuardian-debug.apk
+          if-no-files-found: error
+          retention-days: 30

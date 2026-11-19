@@ -1,6 +1,6 @@
 package com.personal.offerguardian;
 
-/** Fail-closed screenshot X detector. Input is normalized to 686 x 1536. */
+/** Fail-closed X detector for green-border Accept and black-border Match cards. Input 686x1536. */
 public final class VisualDeclineDetector {
     public static final int WIDTH = 686, HEIGHT = 1536;
     private static final int TEMPLATE_SIZE = 41;
@@ -18,6 +18,11 @@ public final class VisualDeclineDetector {
     private static boolean green(int p) {
         int r = (p >>> 16) & 255, g = (p >>> 8) & 255, b = p & 255;
         return r < 100 && g >= 95 && g <= 192 && b < 145 && g > r + 38 && g > b + 24;
+    }
+    private static boolean darkBorder(int p) {
+        int r=(p>>>16)&255, g=(p>>>8)&255, b=p&255;
+        return r<85 && g<85 && b<85 && Math.max(r,Math.max(g,b))-
+                Math.min(r,Math.min(g,b)) < 42;
     }
     private static int gray(int p) {
         int r = (p >>> 16) & 255, g = (p >>> 8) & 255, b = p & 255;
@@ -41,8 +46,15 @@ public final class VisualDeclineDetector {
         int[] anchors = {95,195,330,490};
         for (int top = 325; top < 1270; top++) {
             int greens = 0;
-            for (int x : anchors) if (green(pixels[top*width+x])) greens++;
-            if (greens != 4 || top-lastBorder < 8) continue;
+            int black = 0;
+            for (int x : anchors) {
+                int pixel=pixels[top*width+x];
+                if (green(pixel)) greens++;
+                if (darkBorder(pixel)) black++;
+            }
+            // Uber uses a green rule on Accept cards and a black rule on Match cards.
+            // Refuse to match X icons without a recognisable horizontal offer-card border.
+            if ((greens < 4 && black < 4) || top-lastBorder < 8) continue;
             lastBorder = top;
             // A real offer's X is roughly 74 px below the green card border.
             for (int y = top+65; y <= top+84; y++) {
@@ -56,8 +68,8 @@ public final class VisualDeclineDetector {
             }
         }
         if (best < 0.90)
-            return new Match(false,-1,-1,Math.max(0,best),"X / card match below confidence limit");
-        return new Match(true,bestX,bestY,best,"X and green offer-card border agree");
+            return new Match(false,-1,-1,Math.max(0,best),"X / offer-card border match below confidence limit");
+        return new Match(true,bestX,bestY,best,"X and green/black offer-card border agree");
     }
     private static double correlation(int[] pixels, int width, int[] template,
                                       int cx,int cy,double tMean,double tVar) {

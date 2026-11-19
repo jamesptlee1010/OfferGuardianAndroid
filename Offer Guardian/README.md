@@ -1,42 +1,40 @@
-# Offer Guardian v0.2.1 — complete Android project
+# Offer Guardian v0.3.0 — Complete Android source project
 
-**This is the full replacement source project, not a patch and not an APK.** Every file needed for the Android Gradle project and GitHub Actions workflow is present. The ZIP has **no extra enclosing folder**; `app/`, `tests/`, `build.gradle`, `settings.gradle`, and `.github/workflows/build-apk.yml` are at the ZIP root.
+**Full replacement project, not a patch or APK.** This ZIP contains the entire Android application and its GitHub Actions APK workflow. The ZIP has one project root (`app/`, `tests/`, `settings.gradle`, `.github/`). No private Uber map screenshots, customer names, or address information are bundled.
 
-## Important changes from v0.1.0
+## What changed
 
-- Visual X recognition is added for the two provided Australian Uber Eats offer layouts. The offer card moves vertically; the app locates the X relative to the card border.
-- Visual detection can run in **TEST ONLY — locate X without tapping**, the default. Do this first on real offers, while parked.
-- Enabling visual X recognition clears the legacy stuck “Learning armed” state.
-- For offers below the configured threshold (default AUD 30.00), the app attempts a decline **only if** monitoring, visual recognition, automatic decline, and actual tapping are all enabled and the screen passes validation.
-- At or above the threshold, the driver remains in control and can receive a sound/vibration alert. The app never auto-accepts.
-- The GitHub build checks that the selected Android source and final APK are **v0.2.1**, avoiding accidental v0.1.0 builds from duplicated folders.
+- No “Learn the Decline button” step. That failed because Uber's X did not expose a usable Android click event.
+- Screenshot recognition of the grey rounded-square X **plus the real offer-card horizontal border** works with both green-bordered Accept offers and black-bordered Match offers.
+- The app reads the large **$ payout inside the same card** using on-device ML Kit OCR. An unrelated dollar amount elsewhere on screen is never a reason to decline.
+- The screenshot poll runs around every 1.7 seconds while Uber Driver is foreground, rather than depending solely on Uber emitting Android accessibility events.
+- Live diagnostics explain whether Accessibility is connected, screenshot capture succeeded, the X was recognised, price OCR succeeded, and the offer was above/below the threshold. Use “Copy diagnostics for troubleshooting.”
+- The threshold is adjustable (default A$30). **Offers below A$30** qualify for the decline rule; **A$30 or above** trigger an optional sound/vibration alert and are always left for manual decision.
+- TEST ONLY defaults to ON; auto-decline defaults to OFF after updating. **No tap occurs until both are deliberately changed.** A dispatched gesture is not confirmation that Uber processed a decline.
 
-## Build using GitHub Actions
+## Install with GitHub (no Android Studio required)
 
-1. Extract this ZIP on Windows or another computer.
-2. Open the **contents** of the extracted folder. Upload all of them, including `.github/`, into the **root** of your GitHub repository. Do not upload a new `OfferGuardianAndroid/` folder, or the ZIP itself.
-3. Commit changes, then go to **Actions → Build Offer Guardian APK**. If it doesn't start automatically, choose **Run workflow**.
-4. Open a successful run (green check). Under **Artifacts**, download `OfferGuardian-installable-APK`. Extract it to obtain `OfferGuardian-debug.apk`.
-5. Install the APK on your Android phone. If Android reports that it cannot update the existing app, the new APK may have a different GitHub debug signing key; uninstall the previous Offer Guardian first (this resets its app settings and Accessibility permission), then install the new APK.
-6. In **Settings → Apps → Offer Guardian → App info**, confirm **version 0.2.1**. If it still shows 0.1.0, you are still installing an old build.
+1. Extract the ZIP on your computer.
+2. In your GitHub `OfferGuardianAndroid` repository, upload the **CONTENTS** of this ZIP to the **repository root**. That means `app/`, `tests/`, `build.gradle`, `settings.gradle`, `.github/workflows/build-apk.yml`, etc. Do **not** upload another enclosing `OfferGuardianAndroid/` folder.
+3. If old nested project copies exist, delete the older ones later. The new workflow chooses a complete **v0.3.0** source tree, even if older versions are still present.
+4. Commit; go to **Actions → Build Offer Guardian APK**. Wait for a green check.
+5. Open the completed run → **Artifacts → OfferGuardian-v0.3.0-installable-APK**. Download the artifact ZIP, extract `OfferGuardian-v0.3.0-debug.apk` and install it on Android.
+6. Confirm **Settings → Apps → Offer Guardian → App info** says **0.3.0**. Debug APKs built in different GitHub runs may be signed with different keys. If the phone rejects the update, uninstall the old app first and install the new one, then re-enable the Accessibility service and monitoring.
 
-See `GITHUB_BUILD_GUIDE.md` for precise steps and `REPLACE_EXISTING_GITHUB_PROJECT.md` for help with an existing nested-folder repository.
+## Safe first test
 
-## Initial on-phone testing
+1. When **parked**, enable Offer Guardian Android Accessibility service and **Monitor Uber Driver offers**. Keep **Detect grey X** enabled.
+2. Set the threshold to A$30 and leave **TEST ONLY** ON. Do not enable auto-decline yet.
+3. Open Uber Driver and wait for an offer. The service will try to capture its screen while Uber is foreground.
+4. Return to Offer Guardian → **Live diagnostics → Refresh diagnostics**. If recognition works, it should say e.g. `TEST ONLY: A$11.47 < A$30.00. X at (579,752) ... No tap.`
+5. If the app still appears inactive, press **Copy diagnostics for troubleshooting** and paste the copied text into ChatGPT. It will explain whether the service wasn't running, Android blocked screenshot capture, the card X wasn't recognised or OCR couldn't find the price.
+6. Only consider enabling actual tapping after several test-only recognitions match the visible offers exactly. It is experimental and may violate Uber's automation rules or affect account status.
 
-1. Set your minimum payout to AUD 30.00 and enable monitoring / Android Accessibility permission.
-2. Switch on **Recognise X visually from Uber screenshots**.
-3. **Leave TEST ONLY enabled** and leave automatic decline off until you've verified multiple real offers. With test-only active, the app locates X but deliberately sends no tap.
-4. Check **Last recognised offer**. A line like `Visual TEST passed: X at …; NO TAP` means visual recognition succeeded; `could not verify X` means no tap was attempted. The *gesture sent* state does not prove Uber processed a decline.
-5. Automatic tapping is experimental and could affect Uber account standing. Do not configure or use the controls while driving. The app may fail or Uber may change its layout without warning.
+## Offline checks performed
 
-## Tested here
+- `OfferDetectorStandaloneTest`: 20 cases, including Match button and $30.59 threshold behaviour.
+- `VisualDeclineDetectorSyntheticTest`: green-border and black-border offers, plus rejection without card border.
+- `OfferScreenEvaluatorStandaloneTest`: 11 geometry and payout tests.
+- Local detection against 12 user-provided real offer screenshots: 12 X positions found correctly; two unrelated app screenshots rejected. **Those photographs are not included in the project**.
 
-- `OfferDetectorStandaloneTest`: 14 cases passed.
-- `VisualDeclineDetectorSyntheticTest`: passed.
-- `VisualDeclineDetectorStandaloneTest`: matched two supplied Uber offer screenshots at `(579,737)` and `(579,651)` and correctly rejected a non-Uber settings screenshot.
-- **Not yet verified:** a complete GitHub Android APK build, on-phone OCR integration, and real-world successful automatic declines.
-
-## Data / permissions
-
-The app is a prototype using a local Android Accessibility service. Screenshot text recognition uses bundled on-device ML Kit. The app requests no Internet permission and is not affiliated with Uber. It never needs your Uber login. Android may require allowing restricted Accessibility settings when installing an APK outside Google Play.
+**Limitations:** No Android SDK/Gradle was available for an end-to-end APK compilation here. Real-time OCR, Android screenshots, live gesture dispatch, and whether Uber actually declines an offer remain unverified on the phone. An action can fail if Uber changes its UI, Android blocks capture or Android disables the Accessibility service. No Internet permission or Uber credentials are required.

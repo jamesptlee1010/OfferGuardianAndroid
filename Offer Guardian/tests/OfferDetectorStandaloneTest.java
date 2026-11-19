@@ -27,6 +27,12 @@ public class OfferDetectorStandaloneTest {
         no("$5000.00", "Accept");
         yes(50.5, "A$50.50", "Accept");
         no("$3.2.5", "Accept");
-        System.out.println("OfferDetector: 14 tests passed");
+        yes(11.47, "Delivery (2)", "$11.47", "Match");
+        yes(12.41, "Delivery (2)", "$12.41", "Match");
+        yes(30.59, "Pack & Deliver (3)", "$30.59", "Match");
+        yes(19.03, "Delivery (2)", "$19.03", "Match");
+        no("$9.00", "Matching nearby requests");
+        no("$11.47", "Matched");
+        System.out.println("OfferDetector: 20 tests passed");
     }
 }

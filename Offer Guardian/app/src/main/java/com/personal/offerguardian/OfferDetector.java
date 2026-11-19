@@ -13,8 +13,8 @@ public final class OfferDetector {
     private static final Pattern MONEY = Pattern.compile(
             "(?i)(?<![\\w$])(?:AUD\\s*|A\\s*)?\\$\\s*" +
             "((?:\\d{1,3}(?:,\\d{3})+|\\d{1,4})(?:\\.\\d{1,2})?|\\d{1,4},\\d{2})(?![\\d.,])");
-    private static final Pattern ACCEPT = Pattern.compile(
-            "(?i)\\baccept\\b|\\bswipe to accept\\b");
+    private static final Pattern OFFER_ACTION = Pattern.compile(
+            "(?i)\\baccept\\b|\\bswipe to accept\\b|\\bmatch\\b");
     private OfferDetector() {}
 
     public static final class Result {
@@ -41,7 +41,7 @@ public final class OfferDetector {
             String label = raw.trim();
             if (label.isEmpty()) continue;
             labels.add(label);
-            if (ACCEPT.matcher(label).find()) accept = true;
+            if (OFFER_ACTION.matcher(label).find()) accept = true;
             Matcher m = MONEY.matcher(label);
             while (m.find()) {
                 String numeric = m.group(1);
@@ -57,7 +57,7 @@ public final class OfferDetector {
                 } catch (NumberFormatException ignored) { }
             }
         }
-        if (!accept) return new Result(false, 0, "Accept control not visible; no action");
+        if (!accept) return new Result(false, 0, "Neither Accept nor Match is visible; no action");
         if (cents.isEmpty()) return new Result(false, 0, "No readable A$ payout; no action");
         if (cents.size() != 1) return new Result(false, 0, "Multiple different dollar amounts; no action");
         int amount = cents.iterator().next();

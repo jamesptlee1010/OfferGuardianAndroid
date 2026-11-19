@@ -1,13 +1,12 @@
-# Full project — GitHub APK build (v0.2.1)
+# GitHub build, v0.3.0
 
-1. Download `OfferGuardian_FULL_GitHub_v0.2.1.zip` and extract it.
-2. Do **not** upload the ZIP file. From the extracted folder, drag **its contents** (`.github`, `app`, `tests`, `build.gradle`, `settings.gradle`, etc.) into **Add file → Upload files** on your GitHub repository's **Code** tab. This project has **no outer folder** in the ZIP.
-3. Commit your changes to branch `main`.
-4. GitHub's root workflow must be at `.github/workflows/build-apk.yml`, **not** inside `OfferGuardianAndroid/`.
-5. Delete the old `.github/workflows/android.yml` workflow if it exists and is still producing `chmod +x gradlew` errors; this project does not contain `gradlew`.
-6. Open **Actions → Build Offer Guardian APK**. The build can also be started with **Run workflow**.
-7. The workflow uses Java 17, Android SDK 35, Gradle 8.9 and the Android Gradle Plugin 8.7.3. It checks the v0.2.1 source **and** the APK's version, tests payout parsing and visual X detection, then publishes the installable `OfferGuardian-debug.apk` inside an artifact called `OfferGuardian-installable-APK`.
-8. On your phone, download the artifact ZIP, extract it, and tap the APK. If upgrading an existing GitHub debug build gives an install-signature conflict, uninstall the old version first. Re-enable permissions and re-enter preferences as needed.
-9. Verify `Settings → Apps → Offer Guardian → App info` says version **0.2.1**.
+1. Extract `OfferGuardian_FULL_GitHub_v0.3.0.zip`.
+2. Visit the root of your GitHub repository (`https://github.com/jamesptlee1010/OfferGuardianAndroid`).
+3. Upload the folder **contents** (not the folder itself), preserving all paths, especially `.github/workflows/build-apk.yml`.
+4. GitHub should run the `Build Offer Guardian APK` workflow after commit. You can also launch it from the Actions tab with `Run workflow`.
+5. Successful artifacts: `OfferGuardian-v0.3.0-installable-APK` → inside it `OfferGuardian-v0.3.0-debug.apk`.
+6. On phone, install the APK and check Android App info version **0.3.0**. Re-enable Accessibility if Android treats it as a new install.
 
-This project's Android APK has **not** been compiled and tested within ChatGPT's environment. A green GitHub Actions build is required before using the produced APK. A successful compilation does not establish that real Uber Driver declines will work. Use TEST ONLY initially.
+The workflow deliberately searches for a complete v0.3.0 source tree, so it won't silently select the older 0.1.0 project when duplicate folders are still present. There should ideally be only one copy.
+
+**If Actions fails:** Select the failed step in the new `Build Offer Guardian APK` workflow (not old `android.yml`) and share its actual error lines. Uploading only `.github/workflows/build-apk.yml` without the full Java source will not build v0.3.0.

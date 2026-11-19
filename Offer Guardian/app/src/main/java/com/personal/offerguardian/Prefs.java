@@ -31,6 +31,10 @@ final class Prefs {
     static final String COORD_FALLBACK = "coord_fallback";
     static final String VISUAL_X = "visual_x_enabled";
     static final String VISUAL_DRY_RUN = "visual_x_dry_run";
+    static final String LIVE_STATUS = "live_status";
+    static final String LIVE_TIME = "live_time";
+    static final String DIAG_HISTORY = "diagnostic_history";
+    static final String MIGRATED_V03 = "migrated_v03";
     static final String LAST_STATUS = "last_status";
     static final String LAST_AMOUNT = "last_amount";
     static final String LAST_TIME = "last_time";

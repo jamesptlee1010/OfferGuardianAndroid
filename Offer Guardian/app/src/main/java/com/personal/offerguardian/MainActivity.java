@@ -5,6 +5,8 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -41,14 +43,24 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(18, 102, 179);
     private static final int BG = Color.rgb(245, 247, 250);
     private SharedPreferences prefs;
-    private TextView accessStatus, calibrationStatus, lastStatus;
-    private Button confirmButton, discardButton, learnButton;
-    private Switch monitorSwitch, autoSwitch, alertSwitch, coordinateSwitch, visualSwitch, visualTestSwitch;
+    private TextView accessStatus, lastStatus, historyStatus;
+    private Switch monitorSwitch, autoSwitch, alertSwitch, visualSwitch, visualTestSwitch;
     private EditText amountInput;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = Prefs.of(this);
+        // The old learning state could permanently block monitoring. Migrate to
+        // screenshot matching, with NO AUTOMATIC TAPS until explicitly tested.
+        if (!prefs.getBoolean(Prefs.MIGRATED_V03,false)) {
+            prefs.edit().putBoolean(Prefs.MIGRATED_V03,true)
+                    .putBoolean(Prefs.VISUAL_X,true)
+                    .putBoolean(Prefs.LEARNING,false)
+                    .putBoolean(Prefs.PENDING,false)
+                    .putBoolean(Prefs.AUTO_DECLINE,false)
+                    .putBoolean(Prefs.VISUAL_DRY_RUN,true)
+                    .apply();
+        }
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         requestNotificationsIfAppropriate();
@@ -140,7 +152,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("Uber Eats payout filter  ·  Australia  ·  Private prototype", 13, MUTED, false), lp(-2, 20));
+        root.addView(text("v0.3.0  ·  Accept + Match  ·  Australia", 13, MUTED, false), lp(-2, 20));
 
         LinearLayout settings = card(root, "Your delivery rule", "Minimum payout (AUD). Exactly A$30.00 counts as a high offer.");
         amountInput = new EditText(this);
@@ -167,16 +179,16 @@ public final class MainActivity extends Activity {
         });
         autoSwitch.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(Prefs.AUTO_DECLINE, checked).apply();
-            if (checked && !prefs.getBoolean(Prefs.CALIBRATED, false) &&
-                    !prefs.getBoolean(Prefs.VISUAL_X, false)) {
-                new AlertDialog.Builder(this).setTitle("Calibration required")
-                        .setMessage("Automatic decline is not active until you teach the app the actual Decline control and approve the capture. No unknown buttons will be tapped.")
+            if (checked && !prefs.getBoolean(Prefs.VISUAL_X, false)) {
+                autoSwitch.setChecked(false);
+                new AlertDialog.Builder(this).setTitle("Visual screen recognition required")
+                        .setMessage("Enable 'Detect grey X and price' first. No button learning is required.")
                         .setPositiveButton("OK", null).show();
             }
             refresh();
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
-        button(settings, "Test example offers ($14.50 and $36.00)", false, v -> testExamples());
+        button(settings, "Test rules (Delivery + Match)", false, v -> testExamples());
         button(settings, "Test alert sound", false, v -> OfferAlert.signal(this, 36.00));
 
         LinearLayout access = card(root, "Android permission", "Open Android settings and enable the Offer Guardian accessibility service. Android may show a warning about sensitive screen access.");
@@ -185,9 +197,9 @@ public final class MainActivity extends Activity {
         button(access, "Open Accessibility settings", false, v -> openAccessibility());
         button(access, "Open Uber Driver", false, v -> openUber());
 
-        LinearLayout visual = card(root, "Visual X recognition (NEW)",
-                "Based on the two Uber Eats screenshots you supplied. The X is located relative to the green offer-card border, rather than a fixed screen position. New layouts fail safely.");
-        visualSwitch = toggle(visual, "Recognise X visually from Uber screenshots",
+        LinearLayout visual = card(root, "Recognise Uber offers on screen",
+                "No button learning required. Detects the grey-square X and either a green or black offer-card border, then reads the price below it.");
+        visualSwitch = toggle(visual, "Detect grey X and price from Uber offer screenshots",
                 prefs.getBoolean(Prefs.VISUAL_X, false));
         visualTestSwitch = toggle(visual, "TEST ONLY — locate X without tapping (recommended first)",
                 prefs.getBoolean(Prefs.VISUAL_DRY_RUN, true));
@@ -197,7 +209,7 @@ public final class MainActivity extends Activity {
                     .apply();
             if (checked) new AlertDialog.Builder(this)
                     .setTitle("Visual X detection enabled")
-                    .setMessage("The old click-event learning is now stopped. Keep TEST ONLY on. With Uber open, let a below-minimum offer appear and inspect the 'Last recognised offer' status. The app will not tap until you explicitly turn TEST ONLY off AND enable Auto-decline. X matching may fail on different offer layouts.")
+                    .setMessage("This version recognises Accept and Match cards with green or black borders. The old button-learning feature is removed. Keep TEST ONLY on and look at Live diagnostics after an offer appears.")
                     .setPositiveButton("OK", null).show();
             refresh();
         });
@@ -214,50 +226,32 @@ public final class MainActivity extends Activity {
                         }).show();
             } else prefs.edit().putBoolean(Prefs.VISUAL_DRY_RUN, checked).apply();
         });
-        visual.addView(text("Testing: enable Monitoring and visual recognition. When an under-$30 offer appears, check Last recognised offer for 'Visual TEST passed'. Only after testing, enable Auto-decline and turn off TEST ONLY.",
+        visual.addView(text("Testing: keep TEST ONLY on. Open Uber Driver and let an offer appear while safely parked. Return here to read exactly which stage passed or failed. Automatic taps require Auto-decline ON and TEST ONLY OFF.",
                 13, MUTED, false), lp(-2,0));
 
-        LinearLayout calibration = card(root, "Legacy click-event learning (optional)", "The old method requires Uber to report a standard button click. On your phone the X does not appear to report one; use Visual X recognition instead.");
-        calibrationStatus = text("No calibration saved", 13, MUTED, false);
-        calibration.addView(calibrationStatus, lp(-2, 10));
-        learnButton = button(calibration, "1. Arm learning (then decline one real offer)", true, v -> armLearning());
-        confirmButton = button(calibration, "2. Approve captured Decline control", true, v -> approveCandidate());
-        discardButton = button(calibration, "Discard capture", false, v -> {
-            prefs.edit().putBoolean(Prefs.PENDING, false).putBoolean(Prefs.LEARNING, false).apply();
-            refresh();
-        });
-        coordinateSwitch = toggle(calibration, "Allow coordinate tap fallback (higher risk)",
-                prefs.getBoolean(Prefs.COORD_FALLBACK, false));
-        coordinateSwitch.setOnCheckedChangeListener((button, checked) -> {
-            if (!checked) prefs.edit().putBoolean(Prefs.COORD_FALLBACK, false).apply();
-            else if (!prefs.getBoolean(Prefs.COORD_FALLBACK, false)) {
-                coordinateSwitch.setChecked(false);
-                new AlertDialog.Builder(this).setTitle("Coordinate-based taps")
-                        .setMessage("If Uber hides its button from Accessibility, this feature taps the exact position you calibrated. It can hit the wrong control if Uber changes its layout. Only activate after testing on your exact phone.")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("I understand — enable", (d, which) -> {
-                            prefs.edit().putBoolean(Prefs.COORD_FALLBACK, true).apply();
-                            coordinateSwitch.setChecked(true);
-                        }).show();
+        LinearLayout legacy = card(root, "No learning step necessary", null);
+        legacy.addView(text("The original click-event learning was removed because Uber did not expose your X taps to Android. This version searches every fresh offer screenshot for the grey X and reads the payout from the same card.",
+                13,MUTED,false),lp(-2,0));
+
+        LinearLayout recent = card(root, "Live diagnostics", "Shows why the app did or did not detect an Uber offer. No text from maps, customer addresses or stores is saved.");
+        lastStatus = text("No offer detected yet.", 14, INK, false);
+        recent.addView(lastStatus, lp(-2, 12));
+        recent.addView(text("Recent detection steps",14,MUTED,true),lp(-2,6));
+        historyStatus=text("No scan activity yet.",12,MUTED,false);
+        recent.addView(historyStatus,lp(-2,8));
+        button(recent, "Refresh diagnostics", false, v -> refresh());
+        button(recent, "Copy diagnostics for troubleshooting", false, v -> {
+            String report="Offer Guardian v0.3.0\n"+
+                    prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
+            ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+            if(manager!=null) {
+                manager.setPrimaryClip(ClipData.newPlainText("Offer Guardian diagnostic history",report));
+                Toast.makeText(this,"Diagnostics copied",Toast.LENGTH_SHORT).show();
             }
         });
-        button(calibration, "Clear saved calibration", false, v -> {
-            new AlertDialog.Builder(this).setTitle("Clear calibration?")
-                    .setMessage("Automatic declines will stop until you calibrate again.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Clear", (d, which) -> {
-                        prefs.edit().putBoolean(Prefs.CALIBRATED, false).apply();
-                        refresh();
-                    }).show();
-        });
-
-        LinearLayout recent = card(root, "Last recognised offer", "Local diagnostic only. No personal data leaves the phone.");
-        lastStatus = text("No offer detected yet.", 14, INK, false);
-        recent.addView(lastStatus, lp(-2, 4));
-        button(recent, "Refresh status", false, v -> refresh());
 
         LinearLayout note = card(root, "Important limits", null);
-        note.addView(text("Visual detection uses the same screenshot for price and X. It refuses to tap if the X or green border does not match the screenshots you supplied. Always test with TEST ONLY enabled first. Uber's own notification may still sound. This app never accepts an order. Automated interaction may carry Uber account risk.",
+        note.addView(text("The app checks a fresh screenshot for a grey X, matching green/black card border, and a single price in that card. Any uncertain stage means NO TAP. Keep TEST ONLY on until results are verified. It never accepts orders. Automation can affect account standing.",
                 13, MUTED, false), lp(-2, 0));
         root.addView(text("Independent personal utility; not affiliated with or endorsed by Uber.",
                 11, MUTED, false), lp(-2, 0));
@@ -279,7 +273,7 @@ public final class MainActivity extends Activity {
 
     private void testExamples() {
         OfferDetector.Result low = OfferDetector.detect(Arrays.asList("Delivery", "$14.50", "Accept"));
-        OfferDetector.Result high = OfferDetector.detect(Arrays.asList("Delivery", "A$36.00", "Accept"));
+        OfferDetector.Result high = OfferDetector.detect(Arrays.asList("Pack & Deliver (3)", "A$30.59", "Match"));
         float limit = Prefs.threshold(prefs);
         String message = String.format(Locale.US,
                 "A$%.2f: %s\n\nA$%.2f: %s\n\nThis only tests payout logic. It does not press any Uber Driver buttons.",
@@ -314,86 +308,19 @@ public final class MainActivity extends Activity {
         } else startActivity(intent);
     }
 
-    private void armLearning() {
-        if (!accessibilityEnabled()) {
-            new AlertDialog.Builder(this).setTitle("Enable screen access first")
-                    .setMessage("Enable Offer Guardian in Android Accessibility settings before learning the Decline control.")
-                    .setPositiveButton("Open settings", (d, w) -> openAccessibility())
-                    .setNegativeButton("Cancel", null).show();
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Learn the real Decline control")
-                .setMessage("1. Choose a real Uber Eats offer that you genuinely want to decline.\n\n2. Tap Start learning, switch to Uber Driver, and manually tap its Decline / X button once.\n\n3. Return here to inspect and approve the captured control.\n\nWhile learning, automatic declines are suspended. If Uber does not emit an accessible click event, learning may not work.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Start learning", (d, w) -> {
-                    prefs.edit().putBoolean(Prefs.LEARNING, true).putBoolean(Prefs.PENDING, false).apply();
-                    refresh();
-                    openUber();
-                }).show();
-    }
-
-    private void approveCandidate() {
-        if (!prefs.getBoolean(Prefs.PENDING, false)) return;
-        String id = prefs.getString(Prefs.PENDING_ID, "");
-        String label = prefs.getString(Prefs.PENDING_LABEL, "");
-        String detail = "Captured app control:\n\nID: " + (id.isEmpty() ? "(none)" : id) +
-                "\nLabel: " + (label.isEmpty() ? "(none)" : label) +
-                "\n\nOnly approve if the action you just performed was DECLINE, not ACCEPT. For unlabelled controls, coordinate fallback requires a separate opt-in.";
-        new AlertDialog.Builder(this).setTitle("Was that definitely Decline?")
-                .setMessage(detail)
-                .setNegativeButton("No — discard", (d, which) -> {
-                    prefs.edit().putBoolean(Prefs.PENDING, false).apply();
-                    refresh();
-                })
-                .setPositiveButton("Yes — save Decline", (d, which) -> {
-                    prefs.edit()
-                            .putString(Prefs.CAL_ID, prefs.getString(Prefs.PENDING_ID, ""))
-                            .putString(Prefs.CAL_LABEL, prefs.getString(Prefs.PENDING_LABEL, ""))
-                            .putString(Prefs.CAL_CLASS, prefs.getString(Prefs.PENDING_CLASS, ""))
-                            .putFloat(Prefs.CAL_X, prefs.getFloat(Prefs.PENDING_X, -1))
-                            .putFloat(Prefs.CAL_Y, prefs.getFloat(Prefs.PENDING_Y, -1))
-                            .putInt(Prefs.CAL_WIDTH, prefs.getInt(Prefs.PENDING_WIDTH, -1))
-                            .putInt(Prefs.CAL_HEIGHT, prefs.getInt(Prefs.PENDING_HEIGHT, -1))
-                            .putBoolean(Prefs.CALIBRATED, true)
-                            .putBoolean(Prefs.PENDING, false)
-                            .apply();
-                    refresh();
-                }).show();
-    }
-
     private void refresh() {
         if (accessStatus == null) return;
         boolean access = accessibilityEnabled();
         accessStatus.setText(access ? "✓ Accessibility service ENABLED" : "! Accessibility service NOT ENABLED");
         accessStatus.setTextColor(access ? Color.rgb(22, 120, 79) : Color.rgb(181, 92, 32));
-        boolean pending = prefs.getBoolean(Prefs.PENDING, false);
-        boolean learning = prefs.getBoolean(Prefs.LEARNING, false);
-        boolean calibrated = prefs.getBoolean(Prefs.CALIBRATED, false);
-        String summary;
-        if (pending) summary = "Captured a control. Check it, then approve or discard below.";
-        else if (learning) summary = "Learning armed. Manually tap DECLINE on one real Uber offer.";
-        else if (prefs.getBoolean(Prefs.VISUAL_X, false))
-            summary = "Visual X recognition enabled. " +
-                    (prefs.getBoolean(Prefs.VISUAL_DRY_RUN, true) ? "TEST ONLY — no taps." :
-                     "Real gestures allowed only when Auto-decline is ON.");
-        else if (calibrated) summary = "✓ Decline control calibrated. Auto-decline: " +
-                (prefs.getBoolean(Prefs.AUTO_DECLINE, false) ? "ON" : "OFF");
-        else summary = "Not calibrated. Automatic decline cannot operate yet.";
-        calibrationStatus.setText(summary);
-        confirmButton.setVisibility(pending ? View.VISIBLE : View.GONE);
-        discardButton.setVisibility(pending || learning ? View.VISIBLE : View.GONE);
-        learnButton.setText(learning ? "Learning armed — go to Uber Driver" :
-                "1. Arm learning (then decline one real offer)");
-        long timestamp = prefs.getLong(Prefs.LAST_TIME, 0);
-        if (timestamp == 0) lastStatus.setText("No offer detected yet.");
+        long timestamp = prefs.getLong(Prefs.LIVE_TIME, 0);
+        if (timestamp == 0) lastStatus.setText("No live scan yet. Enable Monitoring and Android Accessibility; open Uber Driver.");
         else {
-            String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+            String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
                     .format(new Date(timestamp));
-            lastStatus.setText(String.format(Locale.US, "A$%.2f · %s\n%s",
-                    prefs.getFloat(Prefs.LAST_AMOUNT, 0), time,
-                    prefs.getString(Prefs.LAST_STATUS, "")));
+            lastStatus.setText(time+"\n"+prefs.getString(Prefs.LIVE_STATUS,"No scan status"));
         }
+        if(historyStatus!=null) historyStatus.setText(prefs.getString(Prefs.DIAG_HISTORY,"No scan activity yet."));
     }
 
     @Override protected void onResume() {

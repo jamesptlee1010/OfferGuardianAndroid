@@ -1,0 +1,63 @@
+name: Build Offer Guardian APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Compile and export Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out Offer Guardian
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          # Avoid the retired Android SDK "tools" package (SDK setup exit code 1).
+          packages: "platform-tools"
+
+      - name: Install Android API 35
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          sdkmanager --list_installed
+
+      - name: Install Gradle 8.9
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Run payout parser tests
+        run: |
+          mkdir -p build/host-tests
+          javac -d build/host-tests \
+            app/src/main/java/com/personal/offerguardian/OfferDetector.java \
+            tests/OfferDetectorStandaloneTest.java
+          java -cp build/host-tests com.personal.offerguardian.OfferDetectorStandaloneTest
+
+      - name: Build installable debug APK
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Show APK checksum
+        run: sha256sum app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Make APK available to download
+        uses: actions/upload-artifact@v6
+        with:
+          name: OfferGuardian-installable-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

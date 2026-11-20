@@ -32,7 +32,7 @@ import java.util.Locale;
  * Private on-device Uber screen monitor. It does not use Uber APIs or credentials.
  * The detection path is always: Uber foreground -> fresh screenshot -> grey X
  * plus an actual offer-card border -> OCR payout INSIDE the same card -> rule.
- * No legacy click-event learning, hard-coded tap coordinates, or auto acceptance.
+ * No legacy click-event learning, hard-coded tap coordinates, or automatic accepting.
  */
 public final class OfferAccessibilityService extends AccessibilityService {
     private static final String UBER = "com.ubercab.driver";
@@ -46,10 +46,15 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 if (prefs.getBoolean(Prefs.MONITOR,false) &&
                         !prefs.getBoolean(Prefs.LEARNING,false)) {
                     if (!prefs.getBoolean(Prefs.VISUAL_X,false)) {
+                        hideOverlay();clearPendingAcceptance();
                         status("Visual recognition is OFF. Turn on grey-X recognition in the app.");
                     } else if (isUberForeground()) {
                         scanIfDue();
+                    } else {
+                        hideOverlay();clearPendingAcceptance();
                     }
+                } else {
+                    hideOverlay();clearPendingAcceptance();
                 }
             } catch (Exception e) {
                 status("Monitor error: " + e.getClass().getSimpleName());
@@ -70,6 +75,57 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private long lastHistoryId=-1;
     private OfferRuleEngine.Outcome lastOutcome=null;
     private boolean reviewAlerted=false;
+    private OfferOverlay liveOverlay;
+    private long pendingAcceptanceId=-1, pendingAcceptanceSince=0;
+    private String pendingPickup="";
+    private boolean autoDeclineSent=false;
+    private final OfferAcceptanceEvidence.StableConfirmation acceptanceEvidence=
+            new OfferAcceptanceEvidence.StableConfirmation();
+
+    private void hideOverlay() {if(liveOverlay!=null)liveOverlay.hide();}
+    private void clearPendingAcceptance() {
+        pendingAcceptanceId=-1;pendingAcceptanceSince=0;pendingPickup="";
+        acceptanceEvidence.reset();
+    }
+    private void armPendingAcceptance() {
+        if(lastHistoryId<=0 || autoDeclineSent ||
+                !Prefs.of(this).getBoolean(Prefs.ACCEPT_TRACKING,true))return;
+        try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+            OfferHistoryStore.Item item=store.byId(lastHistoryId);
+            if(item!=null && item.pickup!=null && !item.pickup.trim().isEmpty() &&
+                    OfferHistoryStore.UNKNOWN.equals(item.outcome)) {
+                pendingAcceptanceId=lastHistoryId;
+                pendingAcceptanceSince=SystemClock.elapsedRealtime();
+                pendingPickup=item.pickup;
+                acceptanceEvidence.reset();
+                status("Offer card disappeared. Checking for confirmed pickup assignment (not assuming acceptance).");
+            }
+        } catch(Exception e) {status("Could not start acceptance check: "+e.getClass().getSimpleName());}
+    }
+
+    private void examinePickupAfterOffer(Bitmap screenshot) {
+        final long id=pendingAcceptanceId;
+        if(id<=0 || !Prefs.of(this).getBoolean(Prefs.ACCEPT_TRACKING,true) ||
+                SystemClock.elapsedRealtime()-pendingAcceptanceSince>30000) {
+            clearPendingAcceptance();screenshot.recycle();capturing=false;return;
+        }
+        if(recognizer==null) recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        recognizer.process(InputImage.fromBitmap(screenshot,0))
+            .addOnSuccessListener(text -> {
+                if(id!=pendingAcceptanceId || !isUberForeground())return;
+                boolean found=OfferAcceptanceEvidence.confirmsActivePickup(text.getText(),pendingPickup);
+                if(acceptanceEvidence.observe(found)) {
+                    try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+                        if(store.markAcceptedIfUnknown(id))
+                            status("Accepted job CONFIRMED: same merchant and active pickup screen seen twice. Offer History updated.");
+                        else status("Active pickup seen, but offer outcome was already set; no overwrite.");
+                    } catch(Exception e) {status("Acceptance history update failed: "+e.getClass().getSimpleName());}
+                    clearPendingAcceptance();
+                } else if(found)status("Pickup assignment evidence seen once; awaiting second confirmation.");
+            })
+            .addOnFailureListener(e->status("Acceptance confirmation OCR failed: "+e.getClass().getSimpleName()))
+            .addOnCompleteListener(task->{screenshot.recycle();capturing=false;});
+    }
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
@@ -80,7 +136,10 @@ public final class OfferAccessibilityService extends AccessibilityService {
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event==null || event.getPackageName()==null ||
-                !UBER.contentEquals(event.getPackageName())) return;
+                !UBER.contentEquals(event.getPackageName())) {
+            if(!isUberForeground())hideOverlay();
+            return;
+        }
         if (!Prefs.of(this).getBoolean(Prefs.MONITOR,false) ||
                 !Prefs.of(this).getBoolean(Prefs.VISUAL_X,false)) return;
         // Some Uber map/offer redraws don't generate useful accessibility events.
@@ -132,13 +191,14 @@ public final class OfferAccessibilityService extends AccessibilityService {
 
     private void processScreenshot(Bitmap source) {
         if (!isUberForeground() || !Prefs.of(this).getBoolean(Prefs.MONITOR,false)) {
+            hideOverlay();clearPendingAcceptance();
             source.recycle();capturing=false;
             status("Uber left the foreground. No action.");return;
         }
         int w=source.getWidth(),h=source.getHeight();
         if(w<350 || h<700 || Math.abs(w/(double)h-
                 VisualDeclineDetector.WIDTH/(double)VisualDeclineDetector.HEIGHT)>.018) {
-            source.recycle();capturing=false;
+            hideOverlay();source.recycle();capturing=false;
             status("Screen aspect ratio changed; no tap ("+w+"x"+h+").");return;
         }
         try {
@@ -161,19 +221,30 @@ public final class OfferAccessibilityService extends AccessibilityService {
             VisualDeclineDetector.Match visual=VisualDeclineDetector.locate(pixels,
                     VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT,template,41,41);
             if(!visual.found) {
-                if (++noOfferFrames >= 2) {
-                    // Re-arm after a clearly vanished card; prevents repeatedly ringing
-                    // for a single long-lived offer, but permits new offers of same price.
+                hideOverlay();
+                ++noOfferFrames;
+                // Losing the offer card does NOT mean Accept was pressed.
+                // We only mark Accepted after the next screen confirms the SAME
+                // merchant is now assigned as an active pickup, twice.
+                if(noOfferFrames==1)armPendingAcceptance();
+                if(noOfferFrames>=2) {
                     lastAmount=Double.NaN;
                     lastX=-1;lastY=-1;
                     lastHistoryId=-1;
                     lastOutcome=null;
                     reviewAlerted=false;
+                    autoDeclineSent=false;
                 }
-                source.recycle();capturing=false;
-                status("Screenshot OK; no verified grey X on a green/black offer card. No tap.");return;
+                if(pendingAcceptanceId>0) {
+                    examinePickupAfterOffer(source);
+                } else {
+                    source.recycle();capturing=false;
+                    status("No offer card; overlay hidden. No action.");
+                }
+                return;
             }
             noOfferFrames=0;
+            clearPendingAcceptance();
             status(String.format(Locale.US,"Grey X found at (%d,%d), %.0f%%. Reading card payout...",
                     visual.x,visual.y,visual.confidence*100));
             if(recognizer==null) recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
@@ -211,7 +282,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             }
         }
         OfferScreenEvaluator.Assessment a=OfferScreenEvaluator.assess(visual,lines);
-        if(!a.valid) {status("X found, but " + a.reason + ". No tap.");return;}
+        if(!a.valid) {hideOverlay();status("X found, but " + a.reason + ". No tap.");return;}
         double payout=a.payout;
         long now=SystemClock.elapsedRealtime();
         // New offers are saved once. Subsequent OCR frames can fill missing
@@ -236,13 +307,23 @@ public final class OfferAccessibilityService extends AccessibilityService {
         // When an OCR frame lacks time or distance, retry on the same visible
         // card. Do not lock it into the repeat guard until a final decision.
         if(sameOffer && lastOutcome!=OfferRuleEngine.Outcome.REVIEW) {
-            status(String.format(Locale.US,
-                    "A$%.2f: same offer already evaluated; suppressing repeat action.",payout));
+            // Same visible offer: do not ring again or tap repeatedly. Keep the
+            // already qualified overlay present, and respect any new OFF toggle.
+            if(lastOutcome==OfferRuleEngine.Outcome.SHOW) {
+                OfferRuleEngine.Decision repeat=OfferRuleEngine.evaluate(
+                        Prefs.rules(prefs),payout,minutes,metres);
+                if(OfferOverlayPolicy.shouldShow(repeat,
+                        prefs.getBoolean(Prefs.OVERLAY_ENABLED,true),
+                        prefs.getBoolean(Prefs.MONITOR,false),isUberForeground(),true)) {
+                    if(liveOverlay==null)liveOverlay=new OfferOverlay(this);
+                    liveOverlay.show(repeat.hourly,repeat.perKm);
+                } else hideOverlay();
+            } else hideOverlay();
             return;
         }
         if(!sameOffer) {
             lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
-            lastOutcome=null;reviewAlerted=false;
+            lastOutcome=null;reviewAlerted=false;autoDeclineSent=false;
         }
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
@@ -253,6 +334,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 Double.isNaN(decision.hourly)?"unknown":String.format(Locale.US,"%.2f",decision.hourly),
                 Double.isNaN(decision.perKm)?"unknown":String.format(Locale.US,"%.2f",decision.perKm));
         if(decision.outcome==OfferRuleEngine.Outcome.REVIEW) {
+            hideOverlay();
             lastOutcome=OfferRuleEngine.Outcome.REVIEW;
             if(!reviewAlerted && prefs.getBoolean(Prefs.ALERT,true)) {
                 reviewAlerted=true;
@@ -264,15 +346,28 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         lastOutcome=decision.outcome;
         if(decision.outcome==OfferRuleEngine.Outcome.SHOW) {
+            boolean canShow=OfferOverlayPolicy.shouldShow(decision,
+                    prefs.getBoolean(Prefs.OVERLAY_ENABLED,true),
+                    prefs.getBoolean(Prefs.MONITOR,false),isUberForeground(),true);
+            boolean visible=false;
+            if(canShow) {
+                if(liveOverlay==null)liveOverlay=new OfferOverlay(this);
+                visible=liveOverlay.show(decision.hourly,decision.perKm);
+            } else hideOverlay();
+            final String overlayStatus=visible ? "overlay shown" :
+                    canShow ? "overlay could not display" : "overlay disabled";
             if(prefs.getBoolean(Prefs.ALERT,true)) {
                 boolean started=OfferAlert.signal(this,payout);
                 status(String.format(Locale.US,
-                        "A$%.2f — QUALIFIES; %s. %s; no tap.%s",
-                        payout,decision.reason,started?"Independent alert started":"Sound could not start",rates));
+                        "A$%.2f — QUALIFIES; %s. %s; %s; no tap.%s",
+                        payout,decision.reason,overlayStatus,
+                        started?"Independent alert started":"Sound could not start",rates));
             } else status(String.format(Locale.US,
-                    "A$%.2f — QUALIFIES; %s. Alerts off; no tap.%s",payout,decision.reason,rates));
+                    "A$%.2f — QUALIFIES; %s. %s; alerts off; no tap.%s",
+                    payout,decision.reason,overlayStatus,rates));
             return;
         }
+        hideOverlay();
         if(prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
             status(String.format(Locale.US,"TEST ONLY: A$%.2f — FAILS rules; %s. X at (%d,%d), %.0f%%. No tap.%s",
                     payout,decision.reason,visual.x,visual.y,visual.confidence*100,rates));
@@ -305,6 +400,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             }
         },null);
         if(accepted) {
+            autoDeclineSent=true;
             try(OfferHistoryStore store=new OfferHistoryStore(this)) {
                 store.markDeclineAttempt(declinedHistoryId);
             } catch(Exception ignored) { /* Gesture status remains in diagnostics. */ }
@@ -332,9 +428,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
         edit.apply();
     }
 
-    @Override public void onInterrupt() {status("Accessibility interrupted. Monitoring paused.");}
+    @Override public void onInterrupt() {
+        hideOverlay();clearPendingAcceptance();
+        status("Accessibility interrupted. Monitoring paused.");
+    }
     @Override public void onDestroy() {
         handler.removeCallbacks(monitorLoop);
+        hideOverlay();clearPendingAcceptance();
         if(recognizer!=null) recognizer.close();
         status("Accessibility service stopped. Re-enable if monitoring is needed.");
         super.onDestroy();

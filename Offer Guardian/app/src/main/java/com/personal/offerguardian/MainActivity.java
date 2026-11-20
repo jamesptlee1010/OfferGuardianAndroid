@@ -74,6 +74,11 @@ public final class MainActivity extends Activity {
                     .putInt(Prefs.AUDIO_TONE,0)
                     .putBoolean(Prefs.AUDIO_VIBRATE,true).apply();
         }
+        if(!prefs.getBoolean(Prefs.MIGRATED_V08,false)) {
+            prefs.edit().putBoolean(Prefs.MIGRATED_V08,true)
+                    .putBoolean(Prefs.OVERLAY_ENABLED,true)
+                    .putBoolean(Prefs.ACCEPT_TRACKING,true).apply();
+        }
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         requestNotificationsIfAppropriate();
@@ -165,7 +170,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.7.1  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v0.8.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
@@ -203,6 +208,21 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.8.0",
+                "Approved compact black pill, upper-right of Uber Driver. Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
+        Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
+                prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
+        overlaySwitch.setOnCheckedChangeListener((b,enabled)->
+                prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
+        overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.8.0",
+                "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
+        Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
+                prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
+        acceptanceSwitch.setOnCheckedChangeListener((b,enabled)->
+                prefs.edit().putBoolean(Prefs.ACCEPT_TRACKING,enabled).apply());
+        acceptance.addView(text("If Uber does not expose a reliably matching assignment screen, the offer remains Unknown. You can still correct it in Offer History. The app NEVER taps Accept or Match.",12,MUTED,false),lp(-2,0));
+
         // Standalone alerts do NOT rely on Uber Driver's notification sounds.
         LinearLayout audio = card(root, "High-value offer sound",
                 "Uber Driver can be silenced separately in Android notification settings. " +
@@ -319,7 +339,7 @@ public final class MainActivity extends Activity {
         legacy.addView(text("The original click-event learning was removed because Uber did not expose your X taps to Android. This version searches every fresh offer screenshot for the grey X and reads the payout from the same card.",
                 13,MUTED,false),lp(-2,0));
 
-        LinearLayout recent = card(root, "Live diagnostics", "Shows why the app did or did not detect an Uber offer. No text from maps, customer addresses or stores is saved.");
+        LinearLayout recent = card(root, "Live diagnostics", "Shows why offers qualify, whether the overlay appears, and whether a pickup assignment was verified. No screenshots are stored.");
         lastStatus = text("No offer detected yet.", 14, INK, false);
         recent.addView(lastStatus, lp(-2, 12));
         recent.addView(text("Recent detection steps",14,MUTED,true),lp(-2,6));
@@ -327,7 +347,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.7.1\n"+
+            String report="Offer Guardian v0.8.0\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {

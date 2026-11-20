@@ -79,6 +79,16 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         ContentValues c=new ContentValues();c.put("action","DECLINE_REQUESTED");
         getWritableDatabase().update(TABLE,c,"id=?",new String[]{Long.toString(id)});
     }
+    /** Confirmed pickup assignment only; never overwrite a manually selected outcome. */
+    public synchronized boolean markAcceptedIfUnknown(long id) {
+        if(id<=0)return false;
+        ContentValues c=new ContentValues();
+        c.put("outcome",ACCEPTED);
+        c.put("action","ASSIGNMENT_CONFIRMED");
+        return getWritableDatabase().update(TABLE,c,"id=? AND outcome=? AND action!='DECLINE_REQUESTED'",
+                new String[]{Long.toString(id),UNKNOWN})==1;
+    }
+
     public synchronized void setOutcome(long id,String outcome) {
         if(id<=0 || !(UNKNOWN.equals(outcome) || ACCEPTED.equals(outcome) ||
                 DECLINED.equals(outcome) || EXPIRED.equals(outcome))) return;

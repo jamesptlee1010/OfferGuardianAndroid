@@ -8,6 +8,9 @@ final class Prefs {
     private Prefs() {}
     private static final String NAME = "offer_guardian_prefs";
     static final String MONITOR = "monitor";
+    static final String OVERLAY_ENABLED = "qualifying_overlay_enabled";
+    static final String ACCEPT_TRACKING = "accept_tracking_enabled";
+    static final String MIGRATED_V08 = "migrated_v08";
     static final String AUTO_DECLINE = "auto_decline";
     static final String ALERT = "alert";
     // Standalone alert audio settings; independent of Uber Driver notification categories.

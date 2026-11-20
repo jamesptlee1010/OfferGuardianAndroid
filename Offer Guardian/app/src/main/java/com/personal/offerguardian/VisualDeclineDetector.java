@@ -1,90 +1,136 @@
 package com.personal.offerguardian;
 
-/** Fail-closed X detector for green-border Accept and black-border Match cards. Input 686x1536. */
+/**
+ * Screenshot-only recognition of Uber's X in a validated offer card.
+ * Supports the white/green, white/black and night-mode dark/green cards,
+ * including when the offer appears above Waze navigation. No fixed tap position.
+ * Inputs are normalised to the same 686x1536 used by the OCR geometry.
+ */
 public final class VisualDeclineDetector {
-    public static final int WIDTH = 686, HEIGHT = 1536;
-    private static final int TEMPLATE_SIZE = 41;
-    private VisualDeclineDetector() { }
+    public static final int WIDTH=686, HEIGHT=1536;
+    private static final int SIZE=41;
+    public enum Theme { LIGHT, DARK }
+    private VisualDeclineDetector() {}
+
     public static final class Match {
         public final boolean found;
-        public final int x, y;
+        public final int x,y;
         public final double confidence;
         public final String reason;
-        Match(boolean found, int x, int y, double confidence, String reason) {
-            this.found = found; this.x = x; this.y = y;
-            this.confidence = confidence; this.reason = reason;
+        public final Theme theme;
+        public final int cardTop;
+        Match(boolean found,int x,int y,double confidence,String reason) {
+            this(found,x,y,confidence,reason,Theme.LIGHT,-1);
+        }
+        Match(boolean found,int x,int y,double confidence,String reason,Theme theme,int cardTop) {
+            this.found=found;this.x=x;this.y=y;this.confidence=confidence;
+            this.reason=reason;this.theme=theme;this.cardTop=cardTop;
         }
     }
+    private static int red(int p) {return (p>>>16)&255;}
+    private static int greenChannel(int p) {return (p>>>8)&255;}
+    private static int blue(int p) {return p&255;}
     private static boolean green(int p) {
-        int r = (p >>> 16) & 255, g = (p >>> 8) & 255, b = p & 255;
-        return r < 100 && g >= 95 && g <= 192 && b < 145 && g > r + 38 && g > b + 24;
+        int r=red(p),g=greenChannel(p),b=blue(p);
+        return r<115 && g>=94 && g<=200 && b<150 && g>r+33 && g>b+22;
     }
-    private static boolean darkBorder(int p) {
-        int r=(p>>>16)&255, g=(p>>>8)&255, b=p&255;
-        return r<85 && g<85 && b<85 && Math.max(r,Math.max(g,b))-
-                Math.min(r,Math.min(g,b)) < 42;
+    private static boolean grayBorder(int p,boolean bright) {
+        int r=red(p),g=greenChannel(p),b=blue(p);
+        return (bright? Math.min(r,Math.min(g,b))>172 : Math.max(r,Math.max(g,b))<86) &&
+                Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))<45;
     }
     private static int gray(int p) {
-        int r = (p >>> 16) & 255, g = (p >>> 8) & 255, b = p & 255;
-        return (r * 77 + g * 150 + b * 29) >>> 8;
+        return (red(p)*77 + greenChannel(p)*150 + blue(p)*29)>>>8;
     }
-    public static Match locate(int[] pixels, int width, int height, int[] reference,
-                               int refWidth, int refHeight) {
-        if (pixels == null || reference == null || width != WIDTH || height != HEIGHT ||
-            pixels.length < width * height || refWidth != TEMPLATE_SIZE ||
-            refHeight != TEMPLATE_SIZE || reference.length < TEMPLATE_SIZE * TEMPLATE_SIZE)
-            return new Match(false, -1, -1, 0, "Wrong image dimensions");
-        double meanT = 0;
-        for (int p : reference) meanT += gray(p);
-        meanT /= reference.length;
-        double varT = 0;
-        for (int p : reference) { double d = gray(p) - meanT; varT += d*d; }
-        if (varT < 10000) return new Match(false,-1,-1,0,"Reference X is blank");
-        double best = -1;
-        int bestX = -1, bestY = -1;
-        int lastBorder = -20;
-        int[] anchors = {95,195,330,490};
-        for (int top = 325; top < 1270; top++) {
-            int greens = 0;
-            int black = 0;
-            for (int x : anchors) {
-                int pixel=pixels[top*width+x];
-                if (green(pixel)) greens++;
-                if (darkBorder(pixel)) black++;
+    private static final int[] ANCHORS={95,195,330,490};
+
+    /** Legacy public overload retained for existing integrations and tests. */
+    public static Match locate(int[] pixels,int width,int height,int[] light,int tw,int th) {
+        return locate(pixels,width,height,light,null,tw,th);
+    }
+
+    /** Auto-detects the actual card theme from pixels; no manual mode switch. */
+    public static Match locate(int[] pixels,int width,int height,int[] light,int[] dark,int tw,int th) {
+        if(pixels==null||light==null||width!=WIDTH||height!=HEIGHT||
+                pixels.length<width*height||tw!=SIZE||th!=SIZE||light.length<SIZE*SIZE||
+                (dark!=null&&dark.length<SIZE*SIZE))
+            return new Match(false,-1,-1,0,"Wrong image or X template dimensions");
+        Template a=new Template(light),b=dark==null?null:new Template(dark);
+        double best=-1;int cx=-1,cy=-1,bestTop=-1;Theme chosen=Theme.LIGHT;
+        int previousTop=-20;
+        for(int top=325;top<1270;top++) {
+            int g=0,black=0,white=0;
+            for(int x:ANCHORS) {
+                int p=pixels[top*width+x];
+                if(green(p))g++;
+                if(grayBorder(p,false))black++;
+                if(grayBorder(p,true))white++;
             }
-            // Uber uses a green rule on Accept cards and a black rule on Match cards.
-            // Refuse to match X icons without a recognisable horizontal offer-card border.
-            if ((greens < 4 && black < 4) || top-lastBorder < 8) continue;
-            lastBorder = top;
-            // A real offer's X is roughly 74 px below the green card border.
-            for (int y = top+65; y <= top+84; y++) {
-                if (y+21 >= height) continue;
-                for (int x = 558; x <= 598; x++) {
-                    if (gray(pixels[y*width+x]) > 145) continue;
-                    if (gray(pixels[(y-18)*width+x+18]) < 210) continue;
-                    double corr = correlation(pixels,width,reference,x,y,meanT,varT);
-                    if (corr > best) { best = corr; bestX=x; bestY=y; }
+            if(g<4&&black<4&&white<4)continue;
+            // Uniform black navigation bars and white map backgrounds are not
+            // candidate card borders. Demand a real transition beneath them.
+            if(g<4) {
+                int changed=0;
+                for(int x:ANCHORS) {
+                    int delta=Math.abs(gray(pixels[top*width+x])-gray(pixels[(top+16)*width+x]));
+                    if(delta>62)changed++;
+                }
+                if(changed<3)continue;
+            }
+            if(top-previousTop<5)continue;
+            previousTop=top;
+            // The X's visual centre is about 74 px below the thin top border.
+            boolean isDark=gray(pixels[(top+95)*width+490])<125;
+            Template primary=isDark&&b!=null?b:a;
+            Template fallback=isDark?a:b;
+            for(int y=top+66;y<=top+84;y++) {
+                if(y+21>=height)break;
+                for(int x=558;x<=598;x++) {
+                    int centre=gray(pixels[y*width+x]);
+                    // Dark-X-on-light and light-X-on-dark require different templates.
+                    if(Math.abs(centre-primary.centre)>93) {
+                        if(fallback==null||Math.abs(centre-fallback.centre)>93)continue;
+                    }
+                    double score=score(pixels,width,primary,x,y);
+                    Theme theme=isDark?Theme.DARK:Theme.LIGHT;
+                    if(fallback!=null && score<.90) {
+                        double alternate=score(pixels,width,fallback,x,y);
+                        if(alternate>score) {score=alternate;theme=isDark?Theme.LIGHT:Theme.DARK;}
+                    }
+                    if(score>best) {best=score;cx=x;cy=y;bestTop=top;chosen=theme;}
                 }
             }
         }
-        if (best < 0.90)
-            return new Match(false,-1,-1,Math.max(0,best),"X / offer-card border match below confidence limit");
-        return new Match(true,bestX,bestY,best,"X and green/black offer-card border agree");
+        if(best<.90) return new Match(false,-1,-1,Math.max(0,best),
+                "No matching X plus actual offer-card border");
+        return new Match(true,cx,cy,best,"X and card border verified",chosen,bestTop);
     }
-    private static double correlation(int[] pixels, int width, int[] template,
-                                      int cx,int cy,double tMean,double tVar) {
-        int n = TEMPLATE_SIZE*TEMPLATE_SIZE;
-        double sum=0, sq=0, cross=0;
-        int i=0;
-        for (int dy=-20;dy<=20;dy++) {
-            int off=(cy+dy)*width+cx-20;
-            for (int dx=0;dx<TEMPLATE_SIZE;dx++) {
-                double lum=gray(pixels[off+dx]);
-                sum+=lum; sq+=lum*lum;
-                cross+=lum*(gray(template[i++])-tMean);
+
+    private static final class Template {
+        final int[] pixels;
+        final double mean,variance;
+        final int centre;
+        Template(int[] pixels) {
+            this.pixels=pixels;this.centre=gray(pixels[20*SIZE+20]);
+            double m=0,v=0;
+            for(int p:pixels)m+=gray(p);
+            m/=pixels.length;
+            for(int p:pixels) {double d=gray(p)-m;v+=d*d;}
+            mean=m;variance=v;
+        }
+    }
+    private static double score(int[] screen,int width,Template t,int x,int y) {
+        if(t.variance<10000)return -1;
+        int n=SIZE*SIZE,i=0;double sum=0,sq=0,cross=0;
+        for(int dy=-20;dy<=20;dy++) {
+            int off=(y+dy)*width+x-20;
+            for(int dx=0;dx<SIZE;dx++) {
+                double lum=gray(screen[off+dx]);
+                sum+=lum;sq+=lum*lum;
+                cross+=lum*(gray(t.pixels[i++])-t.mean);
             }
         }
-        double var=sq-sum*sum/n;
-        return var < 100 ? -1 : cross/Math.sqrt(var*tVar);
+        double v=sq-sum*sum/n;
+        return v<100?-1:cross/Math.sqrt(v*t.variance);
     }
 }

@@ -56,4 +56,25 @@ public final class OfferScreenEvaluator {
             return new Assessment(false, 0, "Card price: " + result.explanation);
         return new Assessment(true, result.payout, "Price and X verified in the same card");
     }
+    /**
+     * When a navigation app owns the foreground, validate that the visible
+     * content really belongs to an Uber delivery offer before allowing an X tap.
+     * A visual match and one price alone are not enough on Waze.
+     */
+    public static boolean hasOfferIdentity(VisualDeclineDetector.Match visual,List<Line> lines) {
+        if(visual==null||!visual.found||lines==null)return false;
+        boolean delivery=false,earnings=false;
+        for(Line line:lines) {
+            if(line==null||line.text==null||line.left<30||line.right>666)continue;
+            int cy=(line.top+line.bottom)/2;
+            if(cy<visual.y-72||cy>visual.y+275)continue;
+            String s=line.text.toLowerCase(java.util.Locale.ROOT);
+            if(s.contains("delivery")||s.contains("pack & deliver")||s.contains("pack and deliver"))
+                delivery=true;
+            if((s.contains("earn")&&s.contains("trip"))||s.contains("est. earning")||
+                    s.contains("completed trip"))earnings=true;
+        }
+        return delivery&&earnings;
+    }
+
 }

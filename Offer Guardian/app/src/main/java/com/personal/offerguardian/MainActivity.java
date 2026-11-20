@@ -170,11 +170,14 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.8.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v0.9.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
                 v -> startActivity(new Intent(this,OfferHistoryActivity.class)));
+
+        LinearLayout contexts=card(root,"Screen recognition · automatic",
+                "Detects light and dark offer cards automatically in Uber Driver or over Waze. No manual mode selection. When Waze is foreground, an auto-decline requires two stable screenshots and verified Uber offer text; otherwise it leaves the screen untouched. Open diagnostics to see why an offer was skipped.");
 
         LinearLayout settings = card(root, "Offer Filtering Rules · Concept B",
                 "Add or remove minimum payment, estimated A$/hour, and estimated A$/km conditions. Choose ANY (OR) or ALL (AND).");
@@ -182,7 +185,7 @@ public final class MainActivity extends Activity {
         settings.addView(rulesSummary,lp(-2,12));
         button(settings,"Open Rules Builder  →",true,
                 v -> startActivity(new Intent(this,OfferRulesActivity.class)));
-        monitorSwitch = toggle(settings, "Monitor Uber Driver offers", prefs.getBoolean(Prefs.MONITOR, false));
+        monitorSwitch = toggle(settings, "Monitor offers in Uber Driver and Waze", prefs.getBoolean(Prefs.MONITOR, false));
         autoSwitch = toggle(settings, "Auto-decline offers failing your selected rules", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
         alertSwitch = toggle(settings, "Sound alert for qualifying or uncertain offers", prefs.getBoolean(Prefs.ALERT, true));
         monitorSwitch.setOnCheckedChangeListener((button, checked) -> {
@@ -190,7 +193,7 @@ public final class MainActivity extends Activity {
             if (checked && !accessibilityEnabled()) {
                 new AlertDialog.Builder(this)
                         .setTitle("Enable Accessibility Service")
-                        .setMessage("Android requires you to enable 'Offer Guardian – Uber screen monitor' in Accessibility settings. The service reads Uber Driver's visible screen only. Without permission, filtering will not work.")
+                        .setMessage("Enable 'Offer Guardian – Uber/Waze offer monitor' in Accessibility. It analyses visible Uber offer cards when Uber Driver or Waze is foreground, and automatically detects light/dark style. No internet connection is required.")
                         .setPositiveButton("Open settings", (d, which) -> openAccessibility())
                         .setNegativeButton("Later", null).show();
             }
@@ -208,14 +211,14 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.8.0",
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.0",
                 "Approved compact black pill, upper-right of Uber Driver. Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.8.0",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.0",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -347,7 +350,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.8.0\n"+
+            String report="Offer Guardian v0.9.0\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {
@@ -408,7 +411,7 @@ public final class MainActivity extends Activity {
         accessStatus.setText(access ? "✓ Accessibility service ENABLED" : "! Accessibility service NOT ENABLED");
         accessStatus.setTextColor(access ? Color.rgb(22, 120, 79) : Color.rgb(181, 92, 32));
         long timestamp = prefs.getLong(Prefs.LIVE_TIME, 0);
-        if (timestamp == 0) lastStatus.setText("No live scan yet. Enable Monitoring and Android Accessibility; open Uber Driver.");
+        if (timestamp == 0) lastStatus.setText("No live scan yet. Enable Monitoring and Accessibility; open Uber Driver or Waze.");
         else {
             String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
                     .format(new Date(timestamp));

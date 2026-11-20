@@ -30,12 +30,15 @@ import java.util.Locale;
 
 /**
  * Private on-device Uber screen monitor. It does not use Uber APIs or credentials.
- * The detection path is always: Uber foreground -> fresh screenshot -> grey X
- * plus an actual offer-card border -> OCR payout INSIDE the same card -> rule.
- * No legacy click-event learning, hard-coded tap coordinates, or automatic accepting.
+ * Detection path: trusted foreground (Uber Driver or Waze) -> fresh screenshot ->
+ * automatic light/dark offer-card border + matching X -> OCR payout INSIDE the
+ * same card -> existing rules. Waze auto-declines require two stable observations
+ * AND verified Uber offer text; ambiguous screens never receive a gesture.
+ * No legacy click-event learning, fixed tap coordinates, or automatic accepting.
  */
 public final class OfferAccessibilityService extends AccessibilityService {
-    private static final String UBER = "com.ubercab.driver";
+    private static final String UBER = OfferSurfacePolicy.UBER;
+    private static final String WAZE = OfferSurfacePolicy.WAZE;
     private static final long PERIOD_MS = 1700;
     private static final long REPEAT_GUARD_MS = 90000;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -48,7 +51,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     if (!prefs.getBoolean(Prefs.VISUAL_X,false)) {
                         hideOverlay();clearPendingAcceptance();
                         status("Visual recognition is OFF. Turn on grey-X recognition in the app.");
-                    } else if (isUberForeground()) {
+                    } else if (isSupportedForeground()) {
                         scanIfDue();
                     } else {
                         hideOverlay();clearPendingAcceptance();
@@ -66,6 +69,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
 
     private TextRecognizer recognizer;
     private int[] template;
+    private int[] darkTemplate;
+    private int wazeStableDeclineFrames=0;
     private long lastCaptureAt=0;
     private boolean capturing=false;
     private double lastAmount=Double.NaN;
@@ -88,7 +93,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         acceptanceEvidence.reset();
     }
     private void armPendingAcceptance() {
-        if(lastHistoryId<=0 || autoDeclineSent ||
+        if(lastHistoryId<=0 || autoDeclineSent || !isUberForeground() ||
                 !Prefs.of(this).getBoolean(Prefs.ACCEPT_TRACKING,true))return;
         try(OfferHistoryStore store=new OfferHistoryStore(this)) {
             OfferHistoryStore.Item item=store.byId(lastHistoryId);
@@ -129,28 +134,39 @@ public final class OfferAccessibilityService extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
-        status("Accessibility connected. Waiting for Uber Driver offers.");
+        status("Accessibility connected. Auto day/night recognition for Uber and Waze is active.");
         handler.removeCallbacks(monitorLoop);
         handler.post(monitorLoop);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event==null || event.getPackageName()==null ||
-                !UBER.contentEquals(event.getPackageName())) {
-            if(!isUberForeground())hideOverlay();
+        if(event==null)return;
+        OfferSurfacePolicy.Host host=OfferSurfacePolicy.classify(
+                event.getPackageName()==null?null:event.getPackageName().toString());
+        if(!OfferSurfacePolicy.shouldScan(host)) {
+            if(!isSupportedForeground())hideOverlay();
             return;
         }
-        if (!Prefs.of(this).getBoolean(Prefs.MONITOR,false) ||
-                !Prefs.of(this).getBoolean(Prefs.VISUAL_X,false)) return;
-        // Some Uber map/offer redraws don't generate useful accessibility events.
-        // This early trigger supplements the periodic screenshot poll.
-        if (isUberForeground()) scanIfDue();
+        if(!Prefs.of(this).getBoolean(Prefs.MONITOR,false)||
+                !Prefs.of(this).getBoolean(Prefs.VISUAL_X,false))return;
+        // Waze's navigation updates may not fire Uber events, so the periodic
+        // screenshot poll remains the primary detection path.
+        if(isSupportedForeground())scanIfDue();
     }
 
-    private boolean isUberForeground() {
+    private OfferSurfacePolicy.Host foregroundHost() {
         AccessibilityNodeInfo root=getRootInActiveWindow();
-        return root!=null && root.getPackageName()!=null &&
-                UBER.contentEquals(root.getPackageName());
+        if(root==null||root.getPackageName()==null)return OfferSurfacePolicy.Host.OTHER;
+        return OfferSurfacePolicy.classify(root.getPackageName().toString());
+    }
+    private boolean isSupportedForeground() {
+        return OfferSurfacePolicy.shouldScan(foregroundHost());
+    }
+    private boolean isUberForeground() {
+        return foregroundHost()==OfferSurfacePolicy.Host.UBER;
+    }
+    private boolean isWazeForeground() {
+        return foregroundHost()==OfferSurfacePolicy.Host.WAZE;
     }
 
     private void scanIfDue() {
@@ -190,10 +206,10 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
 
     private void processScreenshot(Bitmap source) {
-        if (!isUberForeground() || !Prefs.of(this).getBoolean(Prefs.MONITOR,false)) {
+        if (!isSupportedForeground() || !Prefs.of(this).getBoolean(Prefs.MONITOR,false)) {
             hideOverlay();clearPendingAcceptance();
             source.recycle();capturing=false;
-            status("Uber left the foreground. No action.");return;
+            status("Uber/Waze no longer foreground. No action.");return;
         }
         int w=source.getWidth(),h=source.getHeight();
         if(w<350 || h<700 || Math.abs(w/(double)h-
@@ -211,6 +227,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 template=new int[ref.getWidth()*ref.getHeight()];
                 ref.getPixels(template,0,ref.getWidth(),0,0,ref.getWidth(),ref.getHeight());
                 ref.recycle();
+                Bitmap darkRef=BitmapFactory.decodeResource(getResources(),
+                        R.raw.decline_x_reference_dark,options);
+                if(darkRef==null||darkRef.getWidth()!=41||darkRef.getHeight()!=41)
+                    throw new IllegalStateException("Dark X template must be 41x41");
+                darkTemplate=new int[41*41];
+                darkRef.getPixels(darkTemplate,0,41,0,0,41,41);
+                darkRef.recycle();
             }
             Bitmap resized=Bitmap.createScaledBitmap(source,VisualDeclineDetector.WIDTH,
                     VisualDeclineDetector.HEIGHT,true);
@@ -219,7 +242,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT);
             if(resized!=source) resized.recycle();
             VisualDeclineDetector.Match visual=VisualDeclineDetector.locate(pixels,
-                    VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT,template,41,41);
+                    VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT,
+                    template,darkTemplate,41,41);
             if(!visual.found) {
                 hideOverlay();
                 ++noOfferFrames;
@@ -232,6 +256,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     lastX=-1;lastY=-1;
                     lastHistoryId=-1;
                     lastOutcome=null;
+                    wazeStableDeclineFrames=0;
                     reviewAlerted=false;
                     autoDeclineSent=false;
                 }
@@ -239,14 +264,14 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     examinePickupAfterOffer(source);
                 } else {
                     source.recycle();capturing=false;
-                    status("No offer card; overlay hidden. No action.");
+                    status("No supported offer card; overlay hidden. No action.");
                 }
                 return;
             }
             noOfferFrames=0;
             clearPendingAcceptance();
-            status(String.format(Locale.US,"Grey X found at (%d,%d), %.0f%%. Reading card payout...",
-                    visual.x,visual.y,visual.confidence*100));
+            status(String.format(Locale.US,"%s offer on %s: X (%d,%d), %.0f%%; reading payout...",
+                    visual.theme,foregroundHost(),visual.x,visual.y,visual.confidence*100));
             if(recognizer==null) recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
             final Bitmap frame=source;
             recognizer.process(InputImage.fromBitmap(frame,0))
@@ -265,7 +290,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
 
     private void onOcrReady(Text text,VisualDeclineDetector.Match visual,int width,int height) {
-        if(!isUberForeground()) {status("Uber left foreground while reading; no action.");return;}
+        if(!isSupportedForeground()) {status("Uber/Waze left foreground while reading; no action.");return;}
         SharedPreferences prefs=Prefs.of(this);
         if(!prefs.getBoolean(Prefs.MONITOR,false)) return;
         List<OfferScreenEvaluator.Line> lines=new ArrayList<>();
@@ -306,7 +331,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         // When an OCR frame lacks time or distance, retry on the same visible
         // card. Do not lock it into the repeat guard until a final decision.
-        if(sameOffer && lastOutcome!=OfferRuleEngine.Outcome.REVIEW) {
+        if(sameOffer && lastOutcome!=OfferRuleEngine.Outcome.REVIEW &&
+                !(isWazeForeground() && lastOutcome==OfferRuleEngine.Outcome.DECLINE &&
+                        !autoDeclineSent)) {
             // Same visible offer: do not ring again or tap repeatedly. Keep the
             // already qualified overlay present, and respect any new OFF toggle.
             if(lastOutcome==OfferRuleEngine.Outcome.SHOW) {
@@ -314,7 +341,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                         Prefs.rules(prefs),payout,minutes,metres);
                 if(OfferOverlayPolicy.shouldShow(repeat,
                         prefs.getBoolean(Prefs.OVERLAY_ENABLED,true),
-                        prefs.getBoolean(Prefs.MONITOR,false),isUberForeground(),true)) {
+                        prefs.getBoolean(Prefs.MONITOR,false),isSupportedForeground(),true)) {
                     if(liveOverlay==null)liveOverlay=new OfferOverlay(this);
                     liveOverlay.show(repeat.hourly,repeat.perKm);
                 } else hideOverlay();
@@ -324,6 +351,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(!sameOffer) {
             lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
             lastOutcome=null;reviewAlerted=false;autoDeclineSent=false;
+            wazeStableDeclineFrames=0;
         }
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
@@ -348,7 +376,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(decision.outcome==OfferRuleEngine.Outcome.SHOW) {
             boolean canShow=OfferOverlayPolicy.shouldShow(decision,
                     prefs.getBoolean(Prefs.OVERLAY_ENABLED,true),
-                    prefs.getBoolean(Prefs.MONITOR,false),isUberForeground(),true);
+                    prefs.getBoolean(Prefs.MONITOR,false),isSupportedForeground(),true);
             boolean visible=false;
             if(canShow) {
                 if(liveOverlay==null)liveOverlay=new OfferOverlay(this);
@@ -378,8 +406,19 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     payout,decision.reason,rates));
             return;
         }
-        if(!prefs.getBoolean(Prefs.VISUAL_X,true) || !isUberForeground()) {
-            status("Visual monitoring or Uber foreground not confirmed; no tap.");return;
+        if(!prefs.getBoolean(Prefs.VISUAL_X,true) || !isSupportedForeground()) {
+            status("Visual monitoring or Uber/Waze foreground not confirmed; no tap.");return;
+        }
+        OfferSurfacePolicy.Host host=foregroundHost();
+        if(host==OfferSurfacePolicy.Host.WAZE) wazeStableDeclineFrames++;
+        boolean reliableOfferText=OfferScreenEvaluator.hasOfferIdentity(visual,lines);
+        if(!OfferSurfacePolicy.allowDecline(host,true,reliableOfferText,
+                wazeStableDeclineFrames,visual.confidence)) {
+            status(String.format(Locale.US,
+                "A$%.2f — Waze safety check: %d stable frame(s), Uber offer text %s, X %.0f%%. No tap.",
+                payout,wazeStableDeclineFrames,reliableOfferText?"confirmed":"not verified",
+                visual.confidence*100));
+            return;
         }
         if(SystemClock.elapsedRealtime()-lastCaptureAt>2500) {
             status("OCR took too long; screenshot is stale, so no tap.");return;
@@ -405,8 +444,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 store.markDeclineAttempt(declinedHistoryId);
             } catch(Exception ignored) { /* Gesture status remains in diagnostics. */ }
         }
-        status(String.format(Locale.US,accepted?"A$%.2f: X tap dispatched; awaiting Android response.":
-                "A$%.2f: Android rejected X gesture; no tap.",payout));
+        status(String.format(Locale.US,accepted?"A$%.2f: X tap dispatched (%s, %s); Uber decline unconfirmed.":
+                "A$%.2f: Android rejected X gesture; no tap. (%s, %s)",
+                payout,host,visual.theme));
     }
 
     private void status(String msg) {

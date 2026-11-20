@@ -1,13 +1,23 @@
-# Offer Guardian v0.9.0 — automatic Uber / Waze / day / night mode
+# Offer Guardian v0.9.1 — automatic Uber / Waze / day / night mode
 
-**Full GitHub-ready source project, not a compiled APK.** This version starts from v0.8.0 and retains the Concept B rules, history, conditional overlay and sound alerts.
+**Full GitHub-ready source project, not a compiled APK.** This version updates v0.9.0 and retains the working day/night/Waze recognition, Concept B rules, history, conditional overlay and sound alerts.
 
-## What's new
+## What's new in v0.9.1 — faster Waze decisions
+
+- **Faster Waze polling:** while Waze is foreground, the screenshot polling loop runs approximately every 700 ms rather than waiting for the prior 1,700 ms cycle (actual device scheduling varies).
+- **Quick second check:** when an offer fails the selected rules, a second *fresh* screenshot is scheduled as soon as the prior OCR completes and Android's screenshot interval permits (at least 430 ms between capture requests). The safety requirement for two observations remains.
+- **Verify it really is the same offer:** both screenshots must match on payout, offer-card/X coordinates, OCR delivery labels **and the pickup merchant**. Unreadable or changing information means **no automatic tap**.
+- **Less OCR work:** screen text recognition now crops to the verified Uber offer card, avoiding OCR on Waze directions and most of the map.
+- **Fewer repeated database operations:** complete offer details are cached while the same visible card is being verified. New offers still enter Offer History.
+- **Useful timing diagnostics:** Live Diagnostics reports screen capture, X detection, OCR, scan time and Waze confirmation delay, in milliseconds. These are *measured on your phone* only after installing the app; no live performance claim has been verified here.
+- **Screenshot-rate-limit handling:** when Android blocks an overly frequent capture, the app backs off rather than skipping the two-frame safety requirement.
+
+## Existing functionality retained
 
 - **Automatic day/night recognition** on each incoming offer: the X detector examines the actual offer card and chooses between a light-template or dark-template, with a fallback when appearance is uncertain. There is no day/night switch in the app.
 - **Waze navigation support:** the accessibility monitor receives Uber Driver and Waze window events. It will scan for a valid Uber offer card on either screen, instead of assuming Uber must own the foreground.
 - **Match and Accept card support** with green, black or light borders, using both X glyph styles. The app does not tap the Accept/Match button itself.
-- **Extra Waze safety:** an automated X gesture from a Waze foreground screen requires the same offer to be seen twice, an X match confidence of at least 94%, and OCR evidence of a delivery offer and its estimated earnings. If a check fails, the offer is left for manual review.
+- **Extra Waze safety:** an automated X gesture from a Waze foreground screen requires the same offer to be seen twice, an X match confidence of at least 94%, OCR evidence of a delivery offer and its estimated earnings, and a matching pickup merchant. If a check fails, the offer is left for manual review.
 - **Live diagnostics** now identify day/night matching and the current foreground host (Uber or Waze). No manual mode choice.
 - Existing payout, estimated $/hour and $/km calculations, ANY/ALL rules, conditional small overlay, sound alerts, offer history and conservative accepted-offer tracking remain available.
 
@@ -24,6 +34,7 @@
 
 - Android 11+ and Accessibility permission required. The screen's 686x1536 aspect ratio is currently expected; different displays fail closed.
 - This is a private, unverified Android app, not affiliated with Uber or Waze. Behaviour can break as Uber's UI changes, and automated interaction may be restricted by platform rules.
+- The fast second capture is not guaranteed to arrive in a fixed time: Android rate-limits accessibility screenshots and OCR speed varies by phone. If verification fails, there is **no automatic tap**.
 - Waze's *background* does not need to be recognised—the visible Uber card does. Some devices may expose overlays with different accessibility package identities or prevent screenshots; check Live Diagnostics if needed.
 - Some display changes or screenshots may be recognised only in testing; **offline tests are not a substitute for live-device testing**. Try TEST ONLY with offers in all three contexts before turning on automatic declines.
 - In the Android Settings accessibility screen, the service name is now **Offer Guardian – Uber/Waze offer monitor**. Recheck the service after updating.
@@ -31,4 +42,4 @@
 
 ## Install
 
-Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.0-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.
+Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.1-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.

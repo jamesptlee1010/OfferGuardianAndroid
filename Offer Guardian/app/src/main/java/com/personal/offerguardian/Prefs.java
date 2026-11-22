@@ -26,6 +26,8 @@ final class Prefs {
     static final String RULE_MIN_HOUR = "rule_min_hour";
     static final String RULE_MIN_KM = "rule_min_km";
     static final String RULE_MODE = "rule_combine_mode";
+    static final String RULE_DELIVERIES = "rule_min_deliveries_enabled";
+    static final String RULE_MIN_DELIVERIES = "rule_min_deliveries";
     static final String LEARNING = "learning";
     static final String PENDING = "pending";
     static final String PENDING_ID = "pending_id";
@@ -67,6 +69,7 @@ final class Prefs {
         return new OfferRuleEngine.Config(
             p.getBoolean(RULE_PRICE,true),threshold(p),
             p.getBoolean(RULE_HOURLY,false),p.getFloat(RULE_MIN_HOUR,40.0f),
-            p.getBoolean(RULE_KM,false),p.getFloat(RULE_MIN_KM,3.0f),mode);
+            p.getBoolean(RULE_KM,false),p.getFloat(RULE_MIN_KM,3.0f),mode,
+            p.getBoolean(RULE_DELIVERIES,false),p.getInt(RULE_MIN_DELIVERIES,2));
     }
 }

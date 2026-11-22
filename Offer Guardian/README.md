@@ -1,8 +1,14 @@
-# Offer Guardian v0.9.5 — Reliable Low-Value and Long-Duration Declines
+# Offer Guardian v0.9.6 — Mandatory Minimum Deliveries + Faster Waze + History Filters
 
 **Full GitHub-ready source project, not a compiled APK.** This version updates the original v0.9.1 Faster Waze source and retains the working day/night/Waze recognition, Concept B rules, history, conditional overlay and sound alerts.
 
-## What's new in v0.9.5 — declined offers that previously stalled
+## What's new in v0.9.6 — mandatory minimum deliveries
+
+Set **Minimum deliveries** to 1, 2, 3, or 4 (disabled by default on update). The count is read exclusively from the green Uber card heading: a complete unbracketed Delivery/Pack & Deliver means one, `Delivery (2)` means two, and `Pack & Deliver (3)` means three. If the count is unreadable or a suffix is truncated, it is **UNKNOWN**, never assumed single.
+
+When enabled, this is a **mandatory condition separate from ANY (OR) / ALL (AND)** on monetary and hourly rules. A lower-count offer can be declined after two stable readings of the count, payout, merchant and card; it does not require accurate OCR duration. When duration is unreadable, History retains **UNKNOWN hourly rate**. Count checks also apply to Waze without bypassing the extra Waze safety screen. The feature preserves the improvements below from v0.9.5.
+
+## Preserved from v0.9.5 — low-value and long-duration decline recovery
 
 - **$5/11-minute order:** Uber displays low whole-dollar amounts as `$5`, without `.00`. Recognise **unambiguous single-digit whole-dollar** amounts `$3`–`$9`; keep rejecting potentially truncated multi-digit amounts like `$29`, and require two matching OCR frames before any rule/gesture.
 - **61- and 67-minute orders:** preserve the existing exact `1 hr 1 min` -> **61 minutes** and `1 hr 7 min` -> **67 minutes** logic. Confirm both readings, then apply the same live rules as short orders.
@@ -21,7 +27,7 @@
 - All filters apply consistently to the list and every on-screen KPI, including matching offer counts, average payment, average estimated hourly earnings and A$/km. Search, date period, Accepted and Highest tabs still apply.
 - Missing/unverified OCR-derived hourly, per-kilometre or distance values never qualify for those conditions. In an ANY query, a legacy offer may still match a **payment-only** condition, with rates displayed as **Unknown**.
 - Filter settings persist locally, independent of **live Active Rules** and the auto-decline service. **Clear all** resets filters without touching saved Uber offer history. Existing **Export all CSV** continues to export full history, regardless of filters.
-- v0.9.4 did not change auto-decline; **v0.9.5 now addresses this issue** while retaining History filters and the original Waze protections.
+- v0.9.4 added display filters; v0.9.5 added recovery for low-payout and hour-plus declines. Both are preserved in v0.9.6.
 - Added 45 pure-Java assertions and nine SQLite integration filter-query scenarios, included in GitHub Actions.
 
 ## Previous v0.9.3 — safer OCR / hourly rates
@@ -76,4 +82,4 @@
 
 ## Install
 
-Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.5-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.
+Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.6-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.

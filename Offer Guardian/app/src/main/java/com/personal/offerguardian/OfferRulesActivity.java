@@ -14,6 +14,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -32,7 +33,8 @@ public final class OfferRulesActivity extends Activity {
     private static final int BORDER=Color.rgb(219,229,222);
     private SharedPreferences prefs;
     private LinearLayout rulesList, liveExamples;
-    private boolean priceOn, hourlyOn, kmOn;
+    private boolean priceOn, hourlyOn, kmOn, deliveriesOn;
+    private int minDeliveries;
     private String priceText,hourlyText,kmText;
     private OfferRuleEngine.Mode mode;
 
@@ -41,6 +43,7 @@ public final class OfferRulesActivity extends Activity {
         prefs=Prefs.of(this);
         OfferRuleEngine.Config c=Prefs.rules(prefs);
         priceOn=c.priceOn;hourlyOn=c.hourlyOn;kmOn=c.kilometreOn;
+        deliveriesOn=c.deliveriesOn;minDeliveries=c.minDeliveries;
         priceText=String.format(Locale.US,"%.2f",c.minPrice);
         hourlyText=String.format(Locale.US,"%.2f",c.minHourly);
         kmText=String.format(Locale.US,"%.2f",c.minPerKm);
@@ -84,7 +87,7 @@ public final class OfferRulesActivity extends Activity {
         header.addView(back,new LinearLayout.LayoutParams(dp(46),dp(48)));
         LinearLayout brand=col();header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         brand.addView(text("Offer Guardian",23,INK,true));
-        brand.addView(text("Offer Rules Builder  ·  v0.7.1",12,MUTED,false));
+        brand.addView(text("Offer Rules Builder  ·  v0.9.6",12,MUTED,false));
         content.addView(text("Choose one, two or three conditions. Only offers meeting your chosen rules are alerted; other verified offers can be declined when auto-decline is enabled.",13,MUTED,false),lp(-2,14));
         LinearLayout monitoring=card(content,12);
         monitoring.setBackground(background(Color.rgb(230,247,235),Color.rgb(173,220,187),12));
@@ -94,7 +97,37 @@ public final class OfferRulesActivity extends Activity {
         rulesList=col();content.addView(rulesList,lp(-2,3));
         TextView add=touch("＋  Add another rule",Color.rgb(232,249,238),GREEN,v->addRule());
         content.addView(add,lp(47,18));
-        content.addView(text("HOW SHOULD THE RULES COMBINE?",14,INK,true),lp(-2,8));
+        content.addView(text("MANDATORY DELIVERY REQUIREMENT",13,GREEN,true),lp(-2,10));
+        LinearLayout deliveryCard=card(content,14);
+        CheckBox deliveryToggle=new CheckBox(this);
+        deliveryToggle.setText("Require a minimum number of deliveries");
+        deliveryToggle.setTextColor(INK);deliveryToggle.setTextSize(15);
+        deliveryToggle.setChecked(deliveriesOn);
+        deliveryCard.addView(deliveryToggle,lp(-2,4));
+        deliveryCard.addView(text("This requirement is independent of ANY/OR and ALL/AND. If enabled, fewer deliveries always fails, regardless of payout or hourly rate.",12,MUTED,false),lp(-2,8));
+        RadioGroup deliveryOptions=new RadioGroup(this);
+        deliveryOptions.setOrientation(RadioGroup.VERTICAL);
+        int[] deliveryIds=new int[4];
+        String[] choices={"At least 1 delivery","At least 2 deliveries","At least 3 deliveries","At least 4 deliveries"};
+        for(int i=0;i<4;i++){
+            RadioButton option=new RadioButton(this);
+            option.setText(choices[i]);option.setTextSize(14);option.setTextColor(INK);
+            option.setId(View.generateViewId());option.setEnabled(deliveriesOn);
+            deliveryIds[i]=option.getId();deliveryOptions.addView(option);
+        }
+        deliveryOptions.check(deliveryIds[Math.max(0,Math.min(3,minDeliveries-1))]);
+        deliveryCard.addView(deliveryOptions);
+        deliveryToggle.setOnCheckedChangeListener((view,checked)->{
+            deliveriesOn=checked;
+            for(int i=0;i<deliveryOptions.getChildCount();i++)
+                deliveryOptions.getChildAt(i).setEnabled(checked);
+            refreshExamples();
+        });
+        deliveryOptions.setOnCheckedChangeListener((groupView,id)->{
+            for(int i=0;i<deliveryIds.length;i++)if(deliveryIds[i]==id)minDeliveries=i+1;
+            refreshExamples();
+        });
+        content.addView(text("HOW SHOULD THE PAYMENT/RATE RULES COMBINE?",14,INK,true),lp(-2,8));
         LinearLayout comb=card(content,12);
         RadioGroup group=new RadioGroup(this);group.setOrientation(RadioGroup.VERTICAL);
         RadioButton any=new RadioButton(this);any.setText("ANY (OR) — one qualifying rule is enough");
@@ -168,7 +201,8 @@ public final class OfferRulesActivity extends Activity {
     private OfferRuleEngine.Config currentConfig(){return new OfferRuleEngine.Config(
         priceOn,Double.isNaN(numeric(priceText))&&!priceOn?30:numeric(priceText),
         hourlyOn,Double.isNaN(numeric(hourlyText))&&!hourlyOn?40:numeric(hourlyText),
-        kmOn,Double.isNaN(numeric(kmText))&&!kmOn?3:numeric(kmText),mode);
+        kmOn,Double.isNaN(numeric(kmText))&&!kmOn?3:numeric(kmText),mode,
+        deliveriesOn,minDeliveries);
     }
     private void refreshExamples(){
         if(liveExamples==null)return;
@@ -178,12 +212,13 @@ public final class OfferRulesActivity extends Activity {
             liveExamples.addView(text("Enter a positive number for every active rule (maximum 10,000).",13,Color.rgb(180,55,50),true),lp(-2,8));return;
         }
         double[] payouts={20,35,15};int[] minutes={27,60,45};int[] metres={5000,20000,6000};
+        int[] counts={1,2,3};
         for(int i=0;i<payouts.length;i++){
-            OfferRuleEngine.Decision result=OfferRuleEngine.evaluate(config,payouts[i],minutes[i],metres[i]);
+            OfferRuleEngine.Decision result=OfferRuleEngine.evaluate(config,payouts[i],minutes[i],metres[i],counts[i]);
             LinearLayout c=card(liveExamples,12);
             c.addView(text(String.format(Locale.US,"Offer %c    A$%.2f",'A'+i,payouts[i]),17,INK,true),lp(-2,4));
-            c.addView(text(String.format(Locale.US,"%d min  ·  %.1f km  ·  A$%.2f/hr  ·  A$%.2f/km",
-                minutes[i],metres[i]/1000.0,result.hourly,result.perKm),12,MUTED,false),lp(-2,6));
+            c.addView(text(String.format(Locale.US,"%d deliveries  ·  %d min  ·  %.1f km  ·  A$%.2f/hr  ·  A$%.2f/km",
+                counts[i],minutes[i],metres[i]/1000.0,result.hourly,result.perKm),12,MUTED,false),lp(-2,6));
             int color=result.outcome==OfferRuleEngine.Outcome.SHOW?GREEN:
                 result.outcome==OfferRuleEngine.Outcome.REVIEW?Color.rgb(150,105,35):Color.rgb(170,50,50);
             String label=result.outcome==OfferRuleEngine.Outcome.SHOW?"✓ Show + alert":
@@ -203,7 +238,9 @@ public final class OfferRulesActivity extends Activity {
             .putFloat(Prefs.THRESHOLD,(float)c.minPrice)
             .putFloat(Prefs.RULE_MIN_HOUR,(float)c.minHourly)
             .putFloat(Prefs.RULE_MIN_KM,(float)c.minPerKm)
-            .putString(Prefs.RULE_MODE,mode.name()).apply();
+            .putString(Prefs.RULE_MODE,mode.name())
+            .putBoolean(Prefs.RULE_DELIVERIES,deliveriesOn)
+            .putInt(Prefs.RULE_MIN_DELIVERIES,minDeliveries).apply();
         Toast.makeText(this,"Rules saved — "+(mode==OfferRuleEngine.Mode.ANY?"ANY (OR)":"ALL (AND)"),Toast.LENGTH_LONG).show();
         finish();
     }

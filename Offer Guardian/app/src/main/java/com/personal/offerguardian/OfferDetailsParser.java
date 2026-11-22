@@ -24,15 +24,15 @@ public final class OfferDetailsParser {
 
     public static final class Details {
         public final String type, pickup, destination;
-        public final int minutes, metres, itemCount, parsedHours, parsedMinutes;
+        public final int minutes, metres, itemCount, parsedHours, parsedMinutes, deliveryCount;
         public final String rawDuration, rawDistance;
         public final boolean hoursSeen, minutesSeen, conflictingDuration;
         Details(String type,String pickup,String destination,int minutes,int metres,int itemCount,
-                int parsedHours,int parsedMinutes,String rawDuration,String rawDistance,
+                int parsedHours,int parsedMinutes,int deliveryCount,String rawDuration,String rawDistance,
                 boolean hoursSeen,boolean minutesSeen,boolean conflictingDuration) {
             this.type=type;this.pickup=pickup;this.destination=destination;
             this.minutes=minutes;this.metres=metres;this.itemCount=itemCount;
-            this.parsedHours=parsedHours;this.parsedMinutes=parsedMinutes;
+            this.parsedHours=parsedHours;this.parsedMinutes=parsedMinutes;this.deliveryCount=deliveryCount;
             this.rawDuration=rawDuration;this.rawDistance=rawDistance;
             this.hoursSeen=hoursSeen;this.minutesSeen=minutesSeen;
             this.conflictingDuration=conflictingDuration;
@@ -132,8 +132,9 @@ public final class OfferDetailsParser {
                 }
             }
         }
+        OfferDeliveryCount.Reading heading=OfferDeliveryCount.detect(xY,all);
         return new Details(type,pickup,destination,minutes,metres,itemCount,
-                parsedHours,parsedMinutes,rawDuration,rawDistance,
+                parsedHours,parsedMinutes,heading.count,rawDuration,rawDistance,
                 hoursSeen,minutesSeen,conflicting);
     }
 

@@ -114,6 +114,36 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         return getWritableDatabase().insertOrThrow(TABLE,null,values);
     }
 
+    /**
+     * A verified delivery-count failure does not require an estimated journey
+     * duration. Keep that duration unknown if OCR was incomplete: History must
+     * NEVER show a fabricated A$/hour or include it in verified-rate averages.
+     */
+    public synchronized long recordCountRule(int payoutCents,
+            OfferDetailsParser.Details d,String rawPayout) {
+        if(d==null||d.deliveryCount<1||d.deliveryCount>12||
+                d.pickup==null||d.pickup.trim().length()<3)
+            throw new IllegalArgumentException("Delivery count or pickup unverified");
+        ContentValues values=new ContentValues();
+        values.put("seen_at",System.currentTimeMillis());
+        values.put("payout_cents",payoutCents);
+        values.put("type",d.type);
+        values.put("pickup",d.pickup);
+        values.put("destination",d.destination);
+        values.put("minutes",0); // Unknown, even when one hour is partly visible.
+        values.put("metres",d.metres>0?d.metres:0);
+        values.put("raw_payout",rawPayout==null?"":rawPayout);
+        values.put("raw_duration",d.rawDuration);
+        values.put("raw_distance",d.rawDistance);
+        values.put("extraction_status","COUNT_ONLY");
+        values.put("extraction_note","Two matching delivery headings confirm "+
+                d.deliveryCount+" deliveries. Duration not independently verified; hourly unknown.");
+        values.put("verified_frames",2);
+        values.put("parsed_hours",d.parsedHours);
+        values.put("parsed_minutes",d.parsedMinutes);
+        return getWritableDatabase().insertOrThrow(TABLE,null,values);
+    }
+
     /** Replace metrics only after two NEW consistent and plausible observations. */
     public synchronized void correctVerified(long id,OfferDetailsParser.Details d,String rawPayout) {
         if(id<=0||!OfferExtractionGuard.check(d).valid)return;

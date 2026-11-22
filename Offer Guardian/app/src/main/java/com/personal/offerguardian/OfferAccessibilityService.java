@@ -82,19 +82,21 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private final OfferReadVerifier readVerifier=new OfferReadVerifier();
     private final OfferReadVerifier correctionVerifier=new OfferReadVerifier();
     private final OfferBoundVerifier hourBoundVerifier=new OfferBoundVerifier();
+    private final OfferCountVerifier countVerifier=new OfferCountVerifier();
     private final OfferRetryBudget retryBudget=new OfferRetryBudget();
     private boolean fastRetryPending=false;
     private long scanStartMs=0;
     private final Runnable fastVerifyRunnable=()->{
         if(isSupportedForeground() && (readVerifier.isPending() ||
                 correctionVerifier.isPending() || hourBoundVerifier.isPending() ||
+                countVerifier.isPending() ||
                 fastRetryPending || (isWazeForeground()&&wazeVerifier.isPending())))
             scanIfDue();
     };
     private void scheduleFastVerify() {
         handler.removeCallbacks(fastVerifyRunnable);
         if(!(readVerifier.isPending() || correctionVerifier.isPending() ||
-                hourBoundVerifier.isPending() || fastRetryPending ||
+                hourBoundVerifier.isPending() || countVerifier.isPending() || fastRetryPending ||
                 (isWazeForeground()&&wazeVerifier.isPending())))return;
         long sinceCapture=SystemClock.elapsedRealtime()-lastCaptureAt;
         handler.postDelayed(fastVerifyRunnable,
@@ -111,7 +113,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private int noOfferFrames=0;
     private long lastHistoryId=-1;
     // Avoid a disk read/write on the fast second frame when history is complete.
-    private int cachedMinutes=0,cachedMetres=0;
+    private int cachedMinutes=0,cachedMetres=0,cachedDeliveryCount=0;
     private String cachedPickup="",cachedDestination="";
     private OfferRuleEngine.Outcome lastOutcome=null;
     private boolean reviewAlerted=false;
@@ -120,13 +122,14 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private String pendingPickup="";
     private boolean autoDeclineSent=false;
     private boolean confirmedHourBound=false;
+    private boolean confirmedCountDecline=false;
     private int confirmedLowerHours=0;
     private final OfferAcceptanceEvidence.StableConfirmation acceptanceEvidence=
             new OfferAcceptanceEvidence.StableConfirmation();
 
     private void hideOverlay() {if(liveOverlay!=null)liveOverlay.hide();}
     private void clearReadVerification() {
-        readVerifier.reset();correctionVerifier.reset();hourBoundVerifier.reset();
+        readVerifier.reset();correctionVerifier.reset();hourBoundVerifier.reset();countVerifier.reset();
         fastRetryPending=false;retryBudget.reset();
         resetWazeVerification();
     }
@@ -357,6 +360,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     frame.recycle();capturing=false;
                     if(wazeVerifier.isPending() || readVerifier.isPending() ||
                     correctionVerifier.isPending() || hourBoundVerifier.isPending() ||
+                countVerifier.isPending() ||
                     fastRetryPending)scheduleFastVerify();
                 });
         } catch(Exception e) {
@@ -399,17 +403,40 @@ public final class OfferAccessibilityService extends AccessibilityService {
         // different offer with the same price and X location from bypassing
         // the first/second-frame verification requirement.
         OfferDetailsParser.Details parsed=OfferDetailsParser.parse(visual.y,lines);
+        OfferRuleEngine.Config activeRules=Prefs.rules(prefs);
         boolean sameOffer=lastHistoryId>0 && !Double.isNaN(lastAmount) &&
                 Math.abs(lastAmount-payout)<.005 &&
                 now-lastDecisionAt<REPEAT_GUARD_MS &&
                 Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3 &&
                 cachedPickup.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+"," ").trim()
                     .equals(parsed.pickup.toLowerCase(Locale.ROOT)
-                            .replaceAll("[^a-z0-9]+"," ").trim());
+                            .replaceAll("[^a-z0-9]+"," ").trim()) &&
+                (!activeRules.deliveriesOn || cachedDeliveryCount==parsed.deliveryCount);
         int minutes=parsed.minutes, metres=parsed.metres;
+        // A count restriction is an independent mandatory gate, so it can
+        // establish a rejection even if journey duration is partially unreadable.
+        // But a NEW offer requires two fresh matching card/header observations.
+        if(activeRules.deliveriesOn) {
+            if(parsed.deliveryCount<=0) {
+                countVerifier.reset();hideOverlay();requestFastRetry(visual);
+                status("Delivery-count rule active but header unreadable; manual review, no tap. "+retryStatus());
+                return;
+            }
+            if(parsed.deliveryCount<activeRules.minDeliveries) {
+                hideOverlay();readVerifier.reset();hourBoundVerifier.reset();correctionVerifier.reset();
+                if(sameOffer && confirmedCountDecline && lastOutcome==OfferRuleEngine.Outcome.DECLINE) {
+                    if(!autoDeclineSent)performDecline(payout,parsed,visual,lines,width,height,now,
+                            timing+" | confirmed delivery count "+parsed.deliveryCount);
+                    return;
+                }
+                processDeliveryCountDecline(prefs,payout,parsed,a,visual,lines,width,height,now,timing);
+                return;
+            }
+        }
+        countVerifier.reset();
         boolean metricsWereCorrected=false;
         if(!sameOffer) {
-            OfferReadVerifier.Result verified=readVerifier.observe(payout,parsed,visual.x,visual.y,now);
+            OfferReadVerifier.Result verified=readVerifier.observe(payout,parsed,visual.x,visual.y,now,activeRules.deliveriesOn);
             if(verified.state!=OfferReadVerifier.State.CONFIRMED) {
                 hideOverlay();
                 OfferRuleEngine.Decision bounded=OfferSafeDecline.evaluate(Prefs.rules(prefs),payout,parsed);
@@ -429,7 +456,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                         prefs.getBoolean(Prefs.AUTO_DECLINE,false) &&
                         !prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
                     OfferRuleEngine.Decision preview=OfferRuleEngine.evaluate(
-                            Prefs.rules(prefs),payout,minutes,metres);
+                            activeRules,payout,minutes,metres,parsed.deliveryCount);
                     if(preview.outcome==OfferRuleEngine.Outcome.DECLINE) {
                         wazeVerifier.observe(payout,visual.x,visual.y,visual.cardTop,
                                 visual.confidence,
@@ -475,8 +502,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     status("Hour-bound history upgrade failed; no tap: "+e.getClass().getSimpleName());
                     return;
                 }
-                cachedMinutes=minutes;cachedMetres=metres;
-                confirmedHourBound=false;confirmedLowerHours=0;
+                cachedMinutes=minutes;cachedMetres=metres;cachedDeliveryCount=parsed.deliveryCount;
+                confirmedHourBound=false;confirmedLowerHours=0;confirmedCountDecline=false;
                 metricsWereCorrected=true;lastOutcome=null;
                 resetWazeVerification();
             } else if(safe.valid && cachedMinutes>0 && cachedMetres>0 &&
@@ -522,6 +549,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     }
                 }
                 if(cachedMinutes<=0)cachedMinutes=parsed.minutes;
+                if(cachedDeliveryCount<=0)cachedDeliveryCount=parsed.deliveryCount;
                 if(cachedMetres<=0)cachedMetres=parsed.metres;
                 if(cachedPickup.isEmpty())cachedPickup=parsed.pickup;
                 if(cachedDestination.isEmpty())cachedDestination=parsed.destination;
@@ -530,8 +558,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 try(OfferHistoryStore store=new OfferHistoryStore(this)) {
                     lastHistoryId=store.record((int)Math.round(payout*100),parsed,a.rawPayout);
                 }
-                cachedMinutes=minutes;cachedMetres=metres;
-                confirmedHourBound=false;confirmedLowerHours=0;
+                cachedMinutes=minutes;cachedMetres=metres;cachedDeliveryCount=parsed.deliveryCount;
+                confirmedHourBound=false;confirmedLowerHours=0;confirmedCountDecline=false;
                 cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
             }
         } catch(Exception e) {
@@ -549,7 +577,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             // already qualified overlay present, and respect any new OFF toggle.
             if(lastOutcome==OfferRuleEngine.Outcome.SHOW) {
                 OfferRuleEngine.Decision repeat=OfferRuleEngine.evaluate(
-                        Prefs.rules(prefs),payout,minutes,metres);
+                        activeRules,payout,minutes,metres,parsed.deliveryCount);
                 if(OfferOverlayPolicy.shouldShow(repeat,
                         prefs.getBoolean(Prefs.OVERLAY_ENABLED,true),
                         prefs.getBoolean(Prefs.MONITOR,false),isSupportedForeground(),true)) {
@@ -567,7 +595,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
-        OfferRuleEngine.Decision decision=OfferRuleEngine.evaluate(Prefs.rules(prefs),payout,minutes,metres);
+        OfferRuleEngine.Decision decision=OfferRuleEngine.evaluate(activeRules,payout,minutes,metres,parsed.deliveryCount);
         String rates=String.format(Locale.US," (time: %s; distance: %s; A$/hr: %s; A$/km: %s)",
                 minutes>0?minutes+" min":"unknown",
                 metres>0?String.format(Locale.US,"%.1f km",metres/1000.0):"unknown",
@@ -621,12 +649,65 @@ public final class OfferAccessibilityService extends AccessibilityService {
         performDecline(payout,parsed,visual,lines,width,height,now,timing);
     }
 
+    /**
+     * A verified mandatory delivery-count failure is enough to reject an offer
+     * regardless of how much it pays or what estimated time the OCR can read.
+     * The count and payout must agree across independent frames before any tap.
+     */
+    private void processDeliveryCountDecline(SharedPreferences prefs,double payout,
+            OfferDetailsParser.Details parsed,OfferScreenEvaluator.Assessment assessment,
+            VisualDeclineDetector.Match visual,List<OfferScreenEvaluator.Line> lines,
+            int width,int height,long now,String timing) {
+        boolean confirmed=countVerifier.observe(payout,parsed,visual.x,visual.y,now);
+        if(!confirmed) {
+            if(isWazeForeground()&&prefs.getBoolean(Prefs.AUTO_DECLINE,false)&&
+                    !prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true))
+                wazeVerifier.observe(payout,visual.x,visual.y,visual.cardTop,
+                        visual.confidence,OfferScreenEvaluator.hasOfferIdentity(visual,lines),
+                        parsed.pickup,now);
+            requestFastRetry(visual);
+            status("Mandatory delivery count: "+parsed.deliveryCount+" < "+
+                    Prefs.rules(prefs).minDeliveries+"; confirming payout, header and merchant " +
+                    "on second image. No tap yet. "+retryStatus());
+            return;
+        }
+        retryBudget.reset();fastRetryPending=false;
+        lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
+        cachedMinutes=OfferExtractionGuard.check(parsed).valid?parsed.minutes:0;
+        cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
+        cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
+        lastOutcome=OfferRuleEngine.Outcome.DECLINE;reviewAlerted=false;autoDeclineSent=false;
+        confirmedCountDecline=true;confirmedHourBound=false;confirmedLowerHours=0;
+        try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+            lastHistoryId=cachedMinutes>0?
+                    store.record((int)Math.round(payout*100),parsed,assessment.rawPayout):
+                    store.recordCountRule((int)Math.round(payout*100),parsed,assessment.rawPayout);
+        } catch(Exception e) {
+            lastHistoryId=-1;status("Confirmed count but history write failed; no tap: "+
+                    e.getClass().getSimpleName());return;
+        }
+        prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
+                .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
+        if(prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
+            status("TEST ONLY: "+parsed.deliveryCount+" deliveries < minimum "+
+                    Prefs.rules(prefs).minDeliveries+"; decline qualified; no tap. "+timing);
+            return;
+        }
+        if(!prefs.getBoolean(Prefs.AUTO_DECLINE,false)) {
+            status("Delivery-count decline qualified; auto-decline OFF; no tap. "+timing);
+            return;
+        }
+        performDecline(payout,parsed,visual,lines,width,height,now,
+                timing+" | mandatory delivery count "+parsed.deliveryCount);
+    }
+
     /** A bounded reading is not a known duration: history must show Unknown/hr. */
     private void processBoundedDecline(SharedPreferences prefs,double payout,
             OfferDetailsParser.Details parsed,OfferScreenEvaluator.Assessment assessment,
             VisualDeclineDetector.Match visual,List<OfferScreenEvaluator.Line> lines,
             int width,int height,long now,String timing,OfferRuleEngine.Decision bound) {
-        boolean confirmed=hourBoundVerifier.observe(payout,parsed,visual.x,visual.y,now);
+        boolean confirmed=hourBoundVerifier.observe(payout,parsed,visual.x,visual.y,now,
+                Prefs.rules(prefs).deliveriesOn);
         if(!confirmed) {
             // Waze additionally needs its own two-frame, high-confidence offer identity.
             if(isWazeForeground() && prefs.getBoolean(Prefs.AUTO_DECLINE,false) &&
@@ -642,7 +723,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         retryBudget.reset();fastRetryPending=false;
         lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
-        cachedMinutes=0;cachedMetres=parsed.metres;
+        cachedMinutes=0;cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
+        confirmedCountDecline=false;
         cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
         lastOutcome=OfferRuleEngine.Outcome.DECLINE;reviewAlerted=false;autoDeclineSent=false;
         confirmedHourBound=true;confirmedLowerHours=parsed.parsedHours;

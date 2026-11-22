@@ -28,7 +28,7 @@ public final class OfferSafeDecline {
         // At least H*60 minutes; actual A$/hr is at most this computed bound.
         // If even the MAXIMUM possible rate fails every OR rule, rejecting is safe.
         OfferRuleEngine.Decision conservative=OfferRuleEngine.evaluate(
-                rules,payout,d.parsedHours*60,d.metres);
+                rules,payout,d.parsedHours*60,d.metres,d.deliveryCount);
         if (conservative.outcome != OfferRuleEngine.Outcome.DECLINE)
             return new OfferRuleEngine.Decision(OfferRuleEngine.Outcome.REVIEW,
                     "Hour-only OCR could still qualify; await exact duration",

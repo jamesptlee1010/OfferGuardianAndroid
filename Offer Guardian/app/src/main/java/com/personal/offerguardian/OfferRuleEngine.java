@@ -10,19 +10,28 @@ public final class OfferRuleEngine {
     public enum Outcome { SHOW, DECLINE, REVIEW }
 
     public static final class Config {
-        public final boolean priceOn, hourlyOn, kilometreOn;
+        public final boolean priceOn, hourlyOn, kilometreOn, deliveriesOn;
         public final double minPrice, minHourly, minPerKm;
+        public final int minDeliveries;
         public final Mode mode;
         public Config(boolean priceOn, double minPrice, boolean hourlyOn, double minHourly,
                       boolean kilometreOn, double minPerKm, Mode mode) {
+            this(priceOn,minPrice,hourlyOn,minHourly,kilometreOn,minPerKm,mode,false,2);
+        }
+        /** The delivery gate is mandatory and never joins ANY/ALL monetary rules. */
+        public Config(boolean priceOn,double minPrice,boolean hourlyOn,double minHourly,
+                      boolean kilometreOn,double minPerKm,Mode mode,
+                      boolean deliveriesOn,int minDeliveries) {
             this.priceOn=priceOn; this.minPrice=minPrice;
             this.hourlyOn=hourlyOn; this.minHourly=minHourly;
             this.kilometreOn=kilometreOn; this.minPerKm=minPerKm;
             this.mode=mode == null ? Mode.ANY : mode;
+            this.deliveriesOn=deliveriesOn;this.minDeliveries=minDeliveries;
         }
         public int count() {return (priceOn?1:0)+(hourlyOn?1:0)+(kilometreOn?1:0);}
         public boolean valid() {
-            return count()>0 && (!priceOn || validValue(minPrice)) &&
+            return (count()>0 || deliveriesOn) && (!deliveriesOn || (minDeliveries>=1 && minDeliveries<=4)) &&
+                (!priceOn || validValue(minPrice)) &&
                 (!hourlyOn || validValue(minHourly)) &&
                 (!kilometreOn || validValue(minPerKm));
         }
@@ -42,10 +51,27 @@ public final class OfferRuleEngine {
 
     /** Time/distance <=0 mean not captured; unknown measurements can never trigger a tap. */
     public static Decision evaluate(Config config, double payout, int minutes, int metres) {
+        return evaluate(config,payout,minutes,metres,0);
+    }
+    /**
+     * deliveryCount=0 means UNKNOWN. Count is a mandatory gate, independent of
+     * the price/rate AND/OR mode; missing count NEVER means one delivery.
+     */
+    public static Decision evaluate(Config config,double payout,int minutes,int metres,
+                                    int deliveryCount) {
         if (config==null || !config.valid() || !Double.isFinite(payout) || payout<=0)
             return new Decision(Outcome.REVIEW,"Missing or invalid payout/rules",payout,Double.NaN,Double.NaN);
         double hourly=minutes>0?payout*60.0/minutes:Double.NaN;
         double km=metres>0?payout*1000.0/metres:Double.NaN;
+        if(config.deliveriesOn) {
+            if(deliveryCount<=0) return new Decision(Outcome.REVIEW,
+                    "Delivery count unreadable; awaiting verification",payout,hourly,km);
+            if(deliveryCount<config.minDeliveries) return new Decision(Outcome.DECLINE,
+                    "Mandatory minimum deliveries: "+deliveryCount+" < "+config.minDeliveries,
+                    payout,hourly,km);
+        }
+        if(config.count()==0)return new Decision(Outcome.SHOW,
+                "Mandatory minimum deliveries met ("+deliveryCount+")",payout,hourly,km);
         int passed=0,failed=0,missing=0;
         StringBuilder detail=new StringBuilder();
         if(config.priceOn) {
@@ -89,6 +115,9 @@ public final class OfferRuleEngine {
         if(c.priceOn)append(b,String.format(Locale.US,"Payment ≥ A$%.2f",c.minPrice));
         if(c.hourlyOn)append(b,String.format(Locale.US,"Hourly ≥ A$%.2f/hr",c.minHourly));
         if(c.kilometreOn)append(b,String.format(Locale.US,"Distance rate ≥ A$%.2f/km",c.minPerKm));
-        return b.toString().replace("; ",c.mode==Mode.ANY?"  OR  ":"  AND  ");
+        String monetary=b.toString().replace("; ",c.mode==Mode.ANY?"  OR  ":"  AND  ");
+        if(c.deliveriesOn) return "Deliveries ≥ "+c.minDeliveries+" (REQUIRED)"+
+                (monetary.isEmpty()?"":"  AND  ("+monetary+")");
+        return monetary;
     }
 }

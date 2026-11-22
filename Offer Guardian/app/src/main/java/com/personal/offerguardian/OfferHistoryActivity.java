@@ -91,7 +91,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.7.1",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.3",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -261,8 +261,12 @@ public final class OfferHistoryActivity extends Activity {
         addLine(card,"⌖  Deliver to: "+fallback(item.destination),13,DARK,false,9);
         addLine(card,"◷  "+(item.minutes>0?item.minutes+" min":"Duration unknown")+
             "   ·   "+OfferRate.distance(item.metres),12,MUTED,false,4);
-        addLine(card,"◈  "+OfferRate.dollarsPerKm(item.cents,item.metres)+
-            "     |     "+OfferRate.dollarsPerHour(item.cents,item.minutes),13,GREEN,true,0);
+        addLine(card,"◈  "+(item.trustworthyRates()?OfferRate.dollarsPerKm(item.cents,item.metres):
+                    "Per-km UNVERIFIED")+
+            "     |     "+(item.trustworthyRates()?OfferRate.dollarsPerHour(item.cents,item.minutes):
+                    "Hourly rate UNVERIFIED"),13,GREEN,true,0);
+        if(!item.trustworthyRates())
+            addLine(card,"Legacy single-frame OCR: duration not confirmed",11,GRAY,false,0);
         card.setOnClickListener(v->showDetail(item.id));
     }
     private static String fallback(String value) {return value==null||value.trim().isEmpty()?"Not readable on offer":value;}
@@ -277,10 +281,15 @@ public final class OfferHistoryActivity extends Activity {
     private void showDetail(long id) {
         OfferHistoryStore.Item item=store.byId(id);if(item==null)return;
         String detail=String.format(Locale.US,
-            "%s  ·  %s\n\nPickup: %s\n\nDeliver to: %s\n\nEstimated duration: %s\nEstimated distance: %s\nEstimated payout per km: %s\nEstimated payout per hour: %s\n\nOutcome: %s%s\n\nSelect an outcome only if you know what happened to this request.",
+            "%s  ·  %s\n\nPickup: %s\n\nDeliver to: %s\n\nEstimated duration: %s\nEstimated distance: %s\nEstimated payout per km: %s\nEstimated payout per hour: %s\n\nReading status: %s (%d frames)\nParsed time: %d hr + %d min\nRaw payout: %s\nRaw duration: %s\nRaw distance: %s\nValidation: %s\n\nOutcome: %s%s\n\nSelect an outcome only if you know what happened to this request.",
             OfferRate.money(item.cents),item.type,fallback(item.pickup),fallback(item.destination),
             item.minutes>0?item.minutes+" min":"Unknown",OfferRate.distance(item.metres),
-            OfferRate.dollarsPerKm(item.cents,item.metres),OfferRate.dollarsPerHour(item.cents,item.minutes),offerOutcome(item),
+            item.trustworthyRates()?OfferRate.dollarsPerKm(item.cents,item.metres):"UNVERIFIED",
+            item.trustworthyRates()?OfferRate.dollarsPerHour(item.cents,item.minutes):"UNVERIFIED",
+            item.extractionStatus,item.verifiedFrames,
+            item.parsedHours,item.parsedMinutes,fallback(item.rawPayout),
+            fallback(item.rawDuration),fallback(item.rawDistance),
+            fallback(item.extractionNote),offerOutcome(item),
             "DECLINE_REQUESTED".equals(item.action)?"\nAutomated decline tap was attempted; Uber confirmation unavailable.":"");
         new AlertDialog.Builder(this).setTitle("Offer details")
             .setMessage(detail).setNeutralButton("Close",null)

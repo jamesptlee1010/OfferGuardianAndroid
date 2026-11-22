@@ -1,8 +1,19 @@
-# Offer Guardian v0.9.1 — automatic Uber / Waze / day / night mode
+# Offer Guardian v0.9.3 — automatic Uber / Waze / day / night mode
 
-**Full GitHub-ready source project, not a compiled APK.** This version updates v0.9.0 and retains the working day/night/Waze recognition, Concept B rules, history, conditional overlay and sound alerts.
+**Full GitHub-ready source project, not a compiled APK.** This version updates the original v0.9.1 Faster Waze source and retains the working day/night/Waze recognition, Concept B rules, history, conditional overlay and sound alerts.
 
-## What's new in v0.9.1 — faster Waze decisions
+## What's new in v0.9.3 — safer OCR / hourly rates
+
+- Built from the ORIGINAL v0.9.1 Faster Waze source (not the v0.9.2 intermediate fix).
+- Full duration extraction: `1 hr 7 min` becomes 67 minutes, including OCR split across adjacent lines.
+- OCR validation flags physically implausible delivery times and shopping durations. Unknown/inconsistent readings do not trigger an automated decision. No software can reconstruct an hour that OCR never recognised in otherwise plausible text; such cases may require manual review.
+- A first valid reading is **provisional**. Two matching screen observations are required before recording a verified offer, displaying a qualifying rate, or sending an automatic decline. A changed payout, time, distance, merchant or card position restarts verification.
+- Waze retains fast second-frame scheduling (~430 ms minimum from previous screenshot start). This is a target, not a guarantee of elapsed real-device response.
+- SQL history upgraded in place: new rows retain raw payout, duration, distance, parsed hours and minutes, total minutes, two-frame count and validation status; older rows are retained, explicitly marked `LEGACY_UNVERIFIED` and excluded from hourly / per-km average calculations rather than presented as verified rates.
+- Offers without two consistent, plausible OCR readings stay in live Diagnostics for manual review and may not be saved in the verified offer history. This prioritises safe actions over logging every transient card.
+- TEST ONLY should remain on until verified on the target Nubia / Waze / Uber setup. Live timing and full Android APK compilation have NOT been tested in this container.
+
+## Previous v0.9.1 Faster Waze design — preserved
 
 - **Faster Waze polling:** while Waze is foreground, the screenshot polling loop runs approximately every 700 ms rather than waiting for the prior 1,700 ms cycle (actual device scheduling varies).
 - **Quick second check:** when an offer fails the selected rules, a second *fresh* screenshot is scheduled as soon as the prior OCR completes and Android's screenshot interval permits (at least 430 ms between capture requests). The safety requirement for two observations remains.
@@ -25,10 +36,11 @@
 
 1. Uber or Waze is visible on the screen. The accessibility service captures a screenshot, without sending it anywhere.
 2. The detector verifies an offer-card border and matching X, automatically deciding which light/dark glyph fits the card.
-3. On-device OCR extracts the price within the same card, and when possible time, distance and pickup/destination.
-4. The saved ANY/ALL rules decide whether to show the overlay + alert or allow an optional decline.
-5. If information is uncertain, **do not tap**. When Waze is in front, require extra consecutive-screen confirmation and offer labels before a decline.
-6. The offer disappears => overlay disappears. A successful tap gesture does not prove Uber declined the offer. Accepted status is only recorded when separately confirmed in Uber; otherwise history keeps Unknown.
+3. On-device OCR extracts the price within the same card and reads time, distance and merchant. Missing or implausible values lead to manual review.
+4. A second matching OCR frame is required to confirm the extracted price, total duration, distance, merchant and card before a rule decision.
+5. The saved ANY/ALL rules decide whether to show the overlay + alert or allow an optional decline.
+6. If information is uncertain, **do not tap**. When Waze is in front, retain its offer-identity and two-frame confirmation safeguards.
+7. The offer disappears => overlay disappears. A successful tap gesture does not prove Uber declined the offer. Accepted status is only recorded when separately confirmed in Uber; otherwise history keeps Unknown.
 
 ## Safety and platform limitations
 
@@ -42,4 +54,4 @@
 
 ## Install
 
-Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.1-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.
+Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.3-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.

@@ -1,11 +1,11 @@
-# Install Offer Guardian v0.9.1 through GitHub Actions
+# Install Offer Guardian v0.9.3 through GitHub Actions
 
-1. Extract **OfferGuardian_FULL_GitHub_v0.9.1_Faster_Waze.zip** on your computer.
+1. Extract **OfferGuardian_v0.9.3_Verified_OCR_Faster_Waze_Source.zip** on your computer.
 2. Open your existing `OfferGuardianAndroid` GitHub repository, **Code** tab.
 3. Upload the *contents* of the extracted project (not another enclosing folder) into the root of your repository, replacing files with the same names. Preserve `.github/workflows/build-apk.yml`.
 4. Delete any obsolete `.github/workflows/android.yml` or other older workflow if it still exists, so only one APK build runs.
-5. Commit changes; open **Actions** > **Build Offer Guardian APK**. The workflow selects a complete source tree with `versionName '0.9.1'` even if older nested versions remain.
-6. After a green build, download `OfferGuardian-v0.9.1-installable-APK` from **Artifacts**, unzip it and install `OfferGuardian-v0.9.1-debug.apk` on your Android phone.
+5. Commit changes; open **Actions** > **Build Offer Guardian APK**. The workflow selects a complete source tree with `versionName '0.9.3'` even if older nested versions remain.
+6. After a green build, download `OfferGuardian-v0.9.3-installable-APK` from **Artifacts**, unzip it and install `OfferGuardian-v0.9.3-debug.apk` on your Android phone.
 7. In Android Settings, check Accessibility is enabled for **Offer Guardian – Uber/Waze offer monitor**. Enable Monitoring and visual X recognition in Offer Guardian.
 8. Start in **TEST ONLY** mode. Try one normal daytime Uber offer, one nighttime offer, and one offer while navigating with Waze. In **Live Diagnostics**, confirm it recognises the theme, price and X, but does not tap. Only enable automatic decline after testing.
 

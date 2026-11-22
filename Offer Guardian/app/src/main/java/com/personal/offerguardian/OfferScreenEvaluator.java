@@ -22,9 +22,13 @@ public final class OfferScreenEvaluator {
     public static final class Assessment {
         public final boolean valid;
         public final double payout;
-        public final String reason;
+        public final String reason, rawPayout;
         Assessment(boolean valid, double payout, String reason) {
+            this(valid,payout,reason,"");
+        }
+        Assessment(boolean valid,double payout,String reason,String rawPayout) {
             this.valid=valid; this.payout=payout; this.reason=reason;
+            this.rawPayout=rawPayout;
         }
     }
 
@@ -48,13 +52,19 @@ public final class OfferScreenEvaluator {
         }
         if (priceCandidates.isEmpty())
             return new Assessment(false, 0, "OCR did not find a price in the offer card");
+        String originalReading=String.join(" | ",priceCandidates);
+        // The offer shows two decimal places. A clipped '$29' can otherwise
+        // look like a valid $29 payout instead of a truncated $29.66.
+        if(!java.util.regex.Pattern.compile("(?i)\\$\\s*[0-9,]+[.,][0-9]{2}\\b")
+                .matcher(originalReading).find())
+            return new Assessment(false,0,"Payout missing complete two-decimal value");
         // The X and border already establish that this is an offer; do not depend
         // on Uber's text-based Accept/Match control being present in the OCR.
         priceCandidates.add("Accept");
         OfferDetector.Result result = OfferDetector.detect(priceCandidates);
         if (!result.valid)
             return new Assessment(false, 0, "Card price: " + result.explanation);
-        return new Assessment(true, result.payout, "Price and X verified in the same card");
+        return new Assessment(true, result.payout, "Price and X verified in the same card",originalReading);
     }
     /**
      * When a navigation app owns the foreground, validate that the visible

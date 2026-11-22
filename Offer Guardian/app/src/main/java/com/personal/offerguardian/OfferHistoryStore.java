@@ -15,7 +15,7 @@ import java.util.Date;
 /** Private on-device offer history; no account sync or network permission. */
 public final class OfferHistoryStore extends SQLiteOpenHelper {
     private static final String DB="guardian_offer_history.db";
-    private static final int VERSION=1;
+    private static final int VERSION=2;
     public static final String UNKNOWN="UNKNOWN", ACCEPTED="ACCEPTED", DECLINED="DECLINED", EXPIRED="EXPIRED";
     private static final String TABLE="offers";
 
@@ -23,6 +23,11 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         public long id, seenAt;
         public int cents, minutes, metres;
         public String type, pickup, destination, outcome, action;
+        public String rawPayout, rawDuration, rawDistance, extractionStatus, extractionNote;
+        public int verifiedFrames, parsedHours, parsedMinutes;
+        public boolean trustworthyRates() {
+            return "VERIFIED".equals(extractionStatus)||"CORRECTED".equals(extractionStatus);
+        }
     }
     public static final class Summary {
         public int today, accepted, declined, highestCents, estimatedAcceptedCents;
@@ -35,16 +40,32 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             "payout_cents INTEGER NOT NULL, type TEXT NOT NULL, pickup TEXT NOT NULL DEFAULT '',"+
             "destination TEXT NOT NULL DEFAULT '', minutes INTEGER NOT NULL DEFAULT 0,"+
             "metres INTEGER NOT NULL DEFAULT 0, outcome TEXT NOT NULL DEFAULT 'UNKNOWN',"+
-            "action TEXT NOT NULL DEFAULT 'NONE')");
+            "action TEXT NOT NULL DEFAULT 'NONE',"+
+            "raw_payout TEXT NOT NULL DEFAULT '', raw_duration TEXT NOT NULL DEFAULT '',"+
+            "raw_distance TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL DEFAULT 'LEGACY_UNVERIFIED',"+
+            "extraction_note TEXT NOT NULL DEFAULT '', verified_frames INTEGER NOT NULL DEFAULT 0,"+
+            "parsed_hours INTEGER NOT NULL DEFAULT 0, parsed_minutes INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE INDEX idx_offer_seen ON offers(seen_at DESC)");
         db.execSQL("CREATE INDEX idx_offer_outcome ON offers(outcome,seen_at DESC)");
     }
     @Override public void onUpgrade(SQLiteDatabase db,int from,int to) {
-        // Future changes must migrate in place: never drop user history.
-        if (from!=to) throw new IllegalStateException("Offer history migration missing");
+        // Preserve all v0.9.1 rows, but explicitly flag their single-frame
+        // rates as unverified. Never silently reinterpret past OCR errors.
+        if(from==1&&to>=2) {
+            db.execSQL("ALTER TABLE offers ADD COLUMN raw_payout TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE offers ADD COLUMN raw_duration TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE offers ADD COLUMN raw_distance TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE offers ADD COLUMN extraction_status TEXT NOT NULL DEFAULT 'LEGACY_UNVERIFIED'");
+            db.execSQL("ALTER TABLE offers ADD COLUMN extraction_note TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE offers ADD COLUMN verified_frames INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE offers ADD COLUMN parsed_hours INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE offers ADD COLUMN parsed_minutes INTEGER NOT NULL DEFAULT 0");
+            from=2;
+        }
+        if(from!=to)throw new IllegalStateException("Offer history migration missing");
     }
 
-    public synchronized long record(int payoutCents,OfferDetailsParser.Details details) {
+    public synchronized long record(int payoutCents,OfferDetailsParser.Details details,String rawPayout) {
         ContentValues values=new ContentValues();
         values.put("seen_at",System.currentTimeMillis());
         values.put("payout_cents",payoutCents);
@@ -53,7 +74,29 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         values.put("destination",details.destination);
         values.put("minutes",details.minutes);
         values.put("metres",details.metres);
+        values.put("raw_payout",rawPayout==null?"":rawPayout);
+        values.put("raw_duration",details.rawDuration);
+        values.put("raw_distance",details.rawDistance);
+        values.put("extraction_status","VERIFIED");
+        values.put("extraction_note","Two matching readings; units and plausibility checked");
+        values.put("verified_frames",2);
+        values.put("parsed_hours",details.parsedHours);
+        values.put("parsed_minutes",details.parsedMinutes);
         return getWritableDatabase().insertOrThrow(TABLE,null,values);
+    }
+
+    /** Replace metrics only after two NEW consistent and plausible observations. */
+    public synchronized void correctVerified(long id,OfferDetailsParser.Details d,String rawPayout) {
+        if(id<=0||!OfferExtractionGuard.check(d).valid)return;
+        ContentValues c=new ContentValues();
+        c.put("minutes",d.minutes);c.put("metres",d.metres);
+        c.put("raw_duration",d.rawDuration);c.put("raw_distance",d.rawDistance);
+        c.put("raw_payout",rawPayout==null?"":rawPayout);
+        c.put("extraction_status","CORRECTED");
+        c.put("extraction_note","Duration/distance revised after two matching new readings");
+        c.put("verified_frames",2);
+        c.put("parsed_hours",d.parsedHours);c.put("parsed_minutes",d.parsedMinutes);
+        getWritableDatabase().update(TABLE,c,"id=?",new String[]{Long.toString(id)});
     }
 
     /** OCR sometimes resolves the second address line one frame later; fill only gaps. */
@@ -101,7 +144,12 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         Item o=new Item();o.id=cur.getLong(0);o.seenAt=cur.getLong(1);
         o.cents=cur.getInt(2);o.type=cur.getString(3);o.pickup=cur.getString(4);
         o.destination=cur.getString(5);o.minutes=cur.getInt(6);o.metres=cur.getInt(7);
-        o.outcome=cur.getString(8);o.action=cur.getString(9);return o;
+        o.outcome=cur.getString(8);o.action=cur.getString(9);
+        o.rawPayout=cur.getString(10);o.rawDuration=cur.getString(11);
+        o.rawDistance=cur.getString(12);o.extractionStatus=cur.getString(13);
+        o.extractionNote=cur.getString(14);o.verifiedFrames=cur.getInt(15);
+        o.parsedHours=cur.getInt(16);o.parsedMinutes=cur.getInt(17);
+        return o;
     }
     /** Shared filtering for the list and the stats, so their figures always agree. */
     private static final class Filter {
@@ -128,7 +176,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         Filter filter=filter(tab,search,firstIncludedMillis);
         List<String> args=new ArrayList<>(filter.args);
         String order="HIGHEST".equals(tab) ? "payout_cents DESC, seen_at DESC":"seen_at DESC";
-        String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action "+
+        String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes "+
             "FROM offers WHERE "+filter.where+" ORDER BY "+order+" LIMIT ? OFFSET ?";
         args.add(Integer.toString(Math.max(1,Math.min(100,limit))));
         args.add(Integer.toString(Math.max(0,offset)));
@@ -142,14 +190,17 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis) {
         Filter filter=filter(tab,search,firstIncludedMillis);
         OfferHistoryStats stats=new OfferHistoryStats();
-        String sql="SELECT payout_cents,minutes,metres,outcome FROM offers WHERE "+filter.where;
+        String sql="SELECT payout_cents,CASE WHEN extraction_status IN ('VERIFIED','CORRECTED') " +
+            "THEN minutes ELSE 0 END," +
+            "CASE WHEN extraction_status IN ('VERIFIED','CORRECTED') " +
+            "THEN metres ELSE 0 END,outcome FROM offers WHERE "+filter.where;
         try(Cursor c=getReadableDatabase().rawQuery(sql,filter.args.toArray(new String[0]))) {
             while(c.moveToNext())stats.add(c.getInt(0),c.getInt(1),c.getInt(2),c.getString(3));
         }
         return stats;
     }
     public synchronized Item byId(long id) {
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action FROM offers WHERE id=?",
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes FROM offers WHERE id=?",
                     new String[]{Long.toString(id)})) {return c.moveToFirst()?parse(c):null;}
     }
     public synchronized Summary summary() {
@@ -169,20 +220,27 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         c.set(Calendar.SECOND,0);c.set(Calendar.MILLISECOND,0);return c.getTimeInMillis();
     }
     public synchronized String csv() {
-        StringBuilder b=new StringBuilder("Offer time,Estimated payout AUD,Type,Pickup,Destination shown,Estimated minutes,Estimated km,Estimated AUD per km,Estimated AUD per hour,Outcome,Automation action\r\n");
+        StringBuilder b=new StringBuilder("Offer time,Estimated payout AUD,Type,Pickup,Destination shown,Estimated minutes,Estimated km,Estimated AUD per km,Estimated AUD per hour,Outcome,Automation action,Raw payout OCR,Raw duration OCR,Raw distance OCR,Extraction status,Extraction note,Verified frames,Parsed hours,Parsed minute component\r\n");
         for(Item v:allRowsForExport()) {
             String when=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.getDefault()).format(new Date(v.seenAt));
             append(b,when);append(b,String.format(Locale.US,"%.2f",v.cents/100.0));
             append(b,v.type);append(b,v.pickup);append(b,v.destination);
             append(b,v.minutes==0?"":Integer.toString(v.minutes));
             append(b,v.metres==0?"":String.format(Locale.US,"%.1f",v.metres/1000.0));
-            append(b,OfferRate.dollarsPerKm(v.cents,v.metres));append(b,OfferRate.dollarsPerHour(v.cents,v.minutes));append(b,v.outcome);append(b,v.action);
+            append(b,v.trustworthyRates()?OfferRate.dollarsPerKm(v.cents,v.metres):"UNVERIFIED");
+            append(b,v.trustworthyRates()?OfferRate.dollarsPerHour(v.cents,v.minutes):"UNVERIFIED");
+            append(b,v.outcome);append(b,v.action);
+            append(b,v.rawPayout);append(b,v.rawDuration);append(b,v.rawDistance);
+            append(b,v.extractionStatus);append(b,v.extractionNote);
+            append(b,Integer.toString(v.verifiedFrames));
+            append(b,Integer.toString(v.parsedHours));
+            append(b,Integer.toString(v.parsedMinutes));
             b.append("\r\n");
         }return b.toString();
     }
     private List<Item> allRowsForExport() {
         List<Item> out=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action FROM offers ORDER BY seen_at DESC",null)) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes FROM offers ORDER BY seen_at DESC",null)) {
             while(c.moveToNext())out.add(parse(c));
         }return out;
     }

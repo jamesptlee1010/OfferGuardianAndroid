@@ -57,15 +57,15 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 if (prefs.getBoolean(Prefs.MONITOR,false) &&
                         !prefs.getBoolean(Prefs.LEARNING,false)) {
                     if (!prefs.getBoolean(Prefs.VISUAL_X,false)) {
-                        hideOverlay();clearPendingAcceptance();resetWazeVerification();
+                        hideOverlay();clearPendingAcceptance();clearReadVerification();
                         status("Visual recognition is OFF. Turn on grey-X recognition in the app.");
                     } else if (isSupportedForeground()) {
                         scanIfDue();
                     } else {
-                        hideOverlay();clearPendingAcceptance();resetWazeVerification();
+                        hideOverlay();clearPendingAcceptance();clearReadVerification();
                     }
                 } else {
-                    hideOverlay();clearPendingAcceptance();resetWazeVerification();
+                    hideOverlay();clearPendingAcceptance();clearReadVerification();
                 }
             } catch (Exception e) {
                 status("Monitor error: " + e.getClass().getSimpleName());
@@ -79,13 +79,18 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private int[] template;
     private int[] darkTemplate;
     private final WazeFastVerifier wazeVerifier=new WazeFastVerifier();
+    private final OfferReadVerifier readVerifier=new OfferReadVerifier();
+    private final OfferReadVerifier correctionVerifier=new OfferReadVerifier();
     private long scanStartMs=0;
     private final Runnable fastVerifyRunnable=()->{
-        if(wazeVerifier.isPending() && isWazeForeground()) scanIfDue();
+        if(isSupportedForeground() && (readVerifier.isPending() ||
+                correctionVerifier.isPending() || (isWazeForeground()&&wazeVerifier.isPending())))
+            scanIfDue();
     };
     private void scheduleFastVerify() {
         handler.removeCallbacks(fastVerifyRunnable);
-        if(!wazeVerifier.isPending() || !isWazeForeground())return;
+        if(!(readVerifier.isPending() || correctionVerifier.isPending() ||
+                (isWazeForeground()&&wazeVerifier.isPending())))return;
         long sinceCapture=SystemClock.elapsedRealtime()-lastCaptureAt;
         handler.postDelayed(fastVerifyRunnable,
                 Math.max(15,WAZE_CONFIRM_MIN_CAPTURE_MS-sinceCapture+15));
@@ -113,6 +118,10 @@ public final class OfferAccessibilityService extends AccessibilityService {
             new OfferAcceptanceEvidence.StableConfirmation();
 
     private void hideOverlay() {if(liveOverlay!=null)liveOverlay.hide();}
+    private void clearReadVerification() {
+        readVerifier.reset();correctionVerifier.reset();
+        resetWazeVerification();
+    }
     private void clearPendingAcceptance() {
         pendingAcceptanceId=-1;pendingAcceptanceSince=0;pendingPickup="";
         acceptanceEvidence.reset();
@@ -199,9 +208,10 @@ public final class OfferAccessibilityService extends AccessibilityService {
             status("Android 11+ required for screen screenshots.");return;
         }
         long now=SystemClock.elapsedRealtime();
-        long minInterval=isWazeForeground() ?
-                (wazeVerifier.isPending()?WAZE_CONFIRM_MIN_CAPTURE_MS:WAZE_MIN_CAPTURE_MS):
-                UBER_MIN_CAPTURE_MS;
+        boolean confirmationPending=readVerifier.isPending()||correctionVerifier.isPending()||
+                (isWazeForeground()&&wazeVerifier.isPending());
+        long minInterval=confirmationPending?WAZE_CONFIRM_MIN_CAPTURE_MS:
+                (isWazeForeground()?WAZE_MIN_CAPTURE_MS:UBER_MIN_CAPTURE_MS);
         if(capturing || now-lastCaptureAt<minInterval)return;
         lastCaptureAt=now;
         scanStartMs=now;
@@ -279,7 +289,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     template,darkTemplate,41,41);
             final long visualReady=SystemClock.elapsedRealtime();
             if(!visual.found) {
-                hideOverlay();resetWazeVerification();
+                hideOverlay();clearReadVerification();
                 ++noOfferFrames;
                 // Losing the offer card does NOT mean Accept was pressed.
                 // We only mark Accepted after the next screen confirms the SAME
@@ -292,7 +302,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     cachedMinutes=0;cachedMetres=0;
                     cachedPickup="";cachedDestination="";
                     lastOutcome=null;
-                    resetWazeVerification();
+                    clearReadVerification();
                     reviewAlerted=false;
                     autoDeclineSent=false;
                 }
@@ -332,7 +342,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 .addOnCompleteListener(task -> {
                     if(ocrImage!=frame)ocrImage.recycle();
                     frame.recycle();capturing=false;
-                    if(wazeVerifier.isPending())scheduleFastVerify();
+                    if(wazeVerifier.isPending() || readVerifier.isPending() ||
+                    correctionVerifier.isPending())scheduleFastVerify();
                 });
         } catch(Exception e) {
             source.recycle();capturing=false;
@@ -362,18 +373,80 @@ public final class OfferAccessibilityService extends AccessibilityService {
         final String timing=OfferScanTiming.summary(scanStarted,screenshotReady,
                 visualReady,SystemClock.elapsedRealtime());
         OfferScreenEvaluator.Assessment a=OfferScreenEvaluator.assess(visual,lines);
-        if(!a.valid) {hideOverlay();resetWazeVerification();
+        if(!a.valid) {hideOverlay();clearReadVerification();
             status("X found, but " + a.reason + ". No tap. " + timing);return;}
         double payout=a.payout;
         long now=SystemClock.elapsedRealtime();
-        // New offers are saved once. Subsequent OCR frames can fill missing
-        // duration or kilometres without generating extra history rows.
+        // New offers are saved once. Including merchant identity prevents a
+        // different offer with the same price and X location from bypassing
+        // the first/second-frame verification requirement.
+        OfferDetailsParser.Details parsed=OfferDetailsParser.parse(visual.y,lines);
         boolean sameOffer=lastHistoryId>0 && !Double.isNaN(lastAmount) &&
                 Math.abs(lastAmount-payout)<.005 &&
                 now-lastDecisionAt<REPEAT_GUARD_MS &&
-                Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3;
-        OfferDetailsParser.Details parsed=OfferDetailsParser.parse(visual.y,lines);
+                Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3 &&
+                cachedPickup.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+"," ").trim()
+                    .equals(parsed.pickup.toLowerCase(Locale.ROOT)
+                            .replaceAll("[^a-z0-9]+"," ").trim());
         int minutes=parsed.minutes, metres=parsed.metres;
+        boolean metricsWereCorrected=false;
+        if(!sameOffer) {
+            OfferReadVerifier.Result verified=readVerifier.observe(payout,parsed,visual.x,visual.y,now);
+            if(verified.state!=OfferReadVerifier.State.CONFIRMED) {
+                hideOverlay();
+                if(verified.state==OfferReadVerifier.State.CHANGED ||
+                        verified.state==OfferReadVerifier.State.UNVERIFIED)resetWazeVerification();
+                // Seed Waze's existing two-screen safety verification on the FIRST
+                // full reading, so the fast SECOND frame completes BOTH checks.
+                if(isWazeForeground() &&
+                        (verified.state==OfferReadVerifier.State.WAITING ||
+                         verified.state==OfferReadVerifier.State.CHANGED) &&
+                        prefs.getBoolean(Prefs.AUTO_DECLINE,false) &&
+                        !prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
+                    OfferRuleEngine.Decision preview=OfferRuleEngine.evaluate(
+                            Prefs.rules(prefs),payout,minutes,metres);
+                    if(preview.outcome==OfferRuleEngine.Outcome.DECLINE) {
+                        wazeVerifier.observe(payout,visual.x,visual.y,visual.cardTop,
+                                visual.confidence,
+                                OfferScreenEvaluator.hasOfferIdentity(visual,lines),
+                                parsed.pickup,now);
+                    }
+                }
+                status(String.format(Locale.US,
+                        "A$%.2f — %s; %s. No decision/tap. Raw time: %s | raw payout: %s | %s",
+                        payout,verified.state,verified.reason,
+                        parsed.rawDuration,a.rawPayout,timing));
+                return;
+            }
+        } else {
+            OfferExtractionGuard.Result safe=OfferExtractionGuard.check(parsed);
+            if(safe.valid && cachedMinutes>0 && cachedMetres>0 &&
+                    (cachedMinutes!=minutes || cachedMetres!=metres ||
+                     correctionVerifier.isPending())) {
+                // A later OCR read contradicts the stored metrics. Withhold
+                // overlay/gesture until TWO matching new frames support a correction.
+                hideOverlay();lastOutcome=OfferRuleEngine.Outcome.REVIEW;
+                OfferReadVerifier.Result revision=correctionVerifier.observe(
+                        payout,parsed,visual.x,visual.y,now);
+                if(revision.state!=OfferReadVerifier.State.CONFIRMED) {
+                    status("Existing offer metrics changed: " + revision.reason +
+                            ". Manual review until confirmed; no tap. " + timing);
+                    return;
+                }
+                try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+                    store.correctVerified(lastHistoryId,parsed,a.rawPayout);
+                } catch(Exception e) {status("Correction save failed: "+e.getClass().getSimpleName());}
+                cachedMinutes=minutes;cachedMetres=metres;
+                lastOutcome=null;
+                metricsWereCorrected=true;
+                resetWazeVerification();
+            } else if(!safe.valid) {
+                // Never replace two verified measurements with an incomplete frame.
+                hideOverlay();lastOutcome=OfferRuleEngine.Outcome.REVIEW;
+                status("Ignoring incomplete repeat OCR: "+safe.reason+". No new tap.");
+                return;
+            } else correctionVerifier.reset();
+        }
         try {
             if(sameOffer) {
                 // Most second Waze frames need NO SQLite work. Only backfill fields
@@ -394,17 +467,20 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 minutes=cachedMinutes;metres=cachedMetres;
             } else {
                 try(OfferHistoryStore store=new OfferHistoryStore(this)) {
-                    lastHistoryId=store.record((int)Math.round(payout*100),parsed);
+                    lastHistoryId=store.record((int)Math.round(payout*100),parsed,a.rawPayout);
                 }
                 cachedMinutes=minutes;cachedMetres=metres;
                 cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
             }
         } catch(Exception e) {
-            status("History save failed: "+e.getClass().getSimpleName()+". Monitoring continues.");
+            hideOverlay();lastHistoryId=-1;
+            status("History save failed: "+e.getClass().getSimpleName()+". Manual review; no tap.");
+            return;
         }
         // When an OCR frame lacks time or distance, retry on the same visible
         // card. Do not lock it into the repeat guard until a final decision.
-        if(sameOffer && lastOutcome!=OfferRuleEngine.Outcome.REVIEW &&
+        if(sameOffer && !metricsWereCorrected &&
+                lastOutcome!=OfferRuleEngine.Outcome.REVIEW &&
                 !(isWazeForeground() && lastOutcome==OfferRuleEngine.Outcome.DECLINE &&
                         !autoDeclineSent)) {
             // Same visible offer: do not ring again or tap repeatedly. Keep the
@@ -424,7 +500,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(!sameOffer) {
             lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
             lastOutcome=null;reviewAlerted=false;autoDeclineSent=false;
-            resetWazeVerification();
+            // Do not clear a first-frame Waze verification here: the matching
+            // second frame is still needed by the Waze decline policy below.
         }
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
@@ -559,12 +636,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
 
     @Override public void onInterrupt() {
-        hideOverlay();clearPendingAcceptance();resetWazeVerification();
+        hideOverlay();clearPendingAcceptance();clearReadVerification();
         status("Accessibility interrupted. Monitoring paused.");
     }
     @Override public void onDestroy() {
         handler.removeCallbacks(monitorLoop);
-        hideOverlay();clearPendingAcceptance();resetWazeVerification();
+        hideOverlay();clearPendingAcceptance();clearReadVerification();
         if(recognizer!=null) recognizer.close();
         status("Accessibility service stopped. Re-enable if monitoring is needed.");
         super.onDestroy();

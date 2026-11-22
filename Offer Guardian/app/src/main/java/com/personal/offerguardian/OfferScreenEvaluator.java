@@ -53,11 +53,16 @@ public final class OfferScreenEvaluator {
         if (priceCandidates.isEmpty())
             return new Assessment(false, 0, "OCR did not find a price in the offer card");
         String originalReading=String.join(" | ",priceCandidates);
-        // The offer shows two decimal places. A clipped '$29' can otherwise
-        // look like a valid $29 payout instead of a truncated $29.66.
-        if(!java.util.regex.Pattern.compile("(?i)\\$\\s*[0-9,]+[.,][0-9]{2}\\b")
-                .matcher(originalReading).find())
-            return new Assessment(false,0,"Payout missing complete two-decimal value");
+        // Uber also displays low whole-dollar offers as "$5" (not "$5.00").
+        // Allow a single-digit whole-dollar payout ONLY when it occupies the
+        // entire payout region. Keep rejecting "$29" as possibly clipped $29.xx.
+        // Every accepted value still needs a second independent agreeing frame.
+        boolean exactCents=java.util.regex.Pattern.compile(
+                "(?i)\\$\\s*[0-9,]+[.,][0-9]{2}\\b")
+                .matcher(originalReading).find();
+        boolean smallWholeDollar=originalReading.trim().matches("(?i)(?:AUD\\s*)?\\$\\s*[3-9]");
+        if(!exactCents && !smallWholeDollar)
+            return new Assessment(false,0,"Payout missing complete cents or unambiguous single-digit dollar amount");
         // The X and border already establish that this is an offer; do not depend
         // on Uber's text-based Accept/Match control being present in the OCR.
         priceCandidates.add("Accept");

@@ -1,8 +1,30 @@
-# Offer Guardian v0.9.3 — automatic Uber / Waze / day / night mode
+# Offer Guardian v0.9.5 — Reliable Low-Value and Long-Duration Declines
 
 **Full GitHub-ready source project, not a compiled APK.** This version updates the original v0.9.1 Faster Waze source and retains the working day/night/Waze recognition, Concept B rules, history, conditional overlay and sound alerts.
 
-## What's new in v0.9.3 — safer OCR / hourly rates
+## What's new in v0.9.5 — declined offers that previously stalled
+
+- **$5/11-minute order:** Uber displays low whole-dollar amounts as `$5`, without `.00`. Recognise **unambiguous single-digit whole-dollar** amounts `$3`–`$9`; keep rejecting potentially truncated multi-digit amounts like `$29`, and require two matching OCR frames before any rule/gesture.
+- **61- and 67-minute orders:** preserve the existing exact `1 hr 1 min` -> **61 minutes** and `1 hr 7 min` -> **67 minutes** logic. Confirm both readings, then apply the same live rules as short orders.
+- **Incomplete hour components:** if OCR recognises only `1 hr`, it cannot be used as an exact duration. If the extracted merchant, payout, distance and hour bound agree on two images, and *even the maximum possible hourly rate* fails the driver's active rules, the app can safely request a decline. Otherwise it waits for better OCR. This rule works for both ANY (OR) and ALL (AND), with no assumptions about missing minutes.
+- **History integrity:** safely declined hour-only offers are saved with `HOUR_BOUND`, exact minutes **unknown (0 internally)** and hourly rate **Unknown**. A subsequent pair of complete matching readings can upgrade the same row to `CORRECTED`. Existing History filters exclude incomplete rates from rate conditions, even though the safe lower-bound decision may allow a decline.
+- **Fast OCR recovery:** incomplete/changed readings trigger up to five early retries before reverting to normal polling; Android screenshot rate-limit conditions back off. Retry status is included in on-phone Live Diagnostics.
+- **No repeated automatic taps:** all paths still require verified card/X position, merchant and two fresh images. Waze retains its additional offer-identity and independent two-frame check. TEST ONLY and Auto-decline switches remain authoritative.
+- **Regression coverage:** new tests for the actual `$5/11 min`, `$27.10/61 min`, `$29.66/67 min` scenarios, bounds that cannot safely decline, retry limits, and Waze/test-mode preservation.
+
+**Important:** This source has passed host-side unit/integration tests, but has not been compiled into an Android APK or validated on the user's phone. Build through GitHub Actions, test with TEST ONLY first, and inspect Live Diagnostics for unverified or missed offers.
+
+## What's new in v0.9.4 — Advanced History Filters
+
+- Added a **Filters** button beside the History period selector; tap to set independent **minimum and maximum** boundaries for payment (A$), estimated routed hourly earnings (A$/hr), payment per kilometre (A$/km), and estimated distance (km).
+- Choose **ALL (AND)** to require each selected metric to qualify, or **ANY (OR)** to match at least one selected metric. Minimum and maximum limits on a *single metric* always form an inclusive range together.
+- All filters apply consistently to the list and every on-screen KPI, including matching offer counts, average payment, average estimated hourly earnings and A$/km. Search, date period, Accepted and Highest tabs still apply.
+- Missing/unverified OCR-derived hourly, per-kilometre or distance values never qualify for those conditions. In an ANY query, a legacy offer may still match a **payment-only** condition, with rates displayed as **Unknown**.
+- Filter settings persist locally, independent of **live Active Rules** and the auto-decline service. **Clear all** resets filters without touching saved Uber offer history. Existing **Export all CSV** continues to export full history, regardless of filters.
+- v0.9.4 did not change auto-decline; **v0.9.5 now addresses this issue** while retaining History filters and the original Waze protections.
+- Added 45 pure-Java assertions and nine SQLite integration filter-query scenarios, included in GitHub Actions.
+
+## Previous v0.9.3 — safer OCR / hourly rates
 
 - Built from the ORIGINAL v0.9.1 Faster Waze source (not the v0.9.2 intermediate fix).
 - Full duration extraction: `1 hr 7 min` becomes 67 minutes, including OCR split across adjacent lines.
@@ -54,4 +76,4 @@
 
 ## Install
 
-Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.3-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.
+Use `.github/workflows/build-apk.yml` in a GitHub repository and run **Build Offer Guardian APK**, then download the artifact `OfferGuardian-v0.9.5-installable-APK`. See `GITHUB_BUILD_GUIDE.md`.

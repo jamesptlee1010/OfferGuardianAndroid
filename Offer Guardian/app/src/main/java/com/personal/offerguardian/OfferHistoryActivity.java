@@ -3,22 +3,22 @@ package com.personal.offerguardian;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.res.ColorStateList;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.InputType;
 import android.util.TypedValue;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -43,7 +43,9 @@ public final class OfferHistoryActivity extends Activity {
     private OfferHistoryStore store;
     private LinearLayout root,results,tabs,summary,averages;
     private EditText search;
-    private TextView dateButton,headerSub,activeRules;
+    private TextView dateButton,filterButton,filterSummary,headerSub,activeRules;
+    private static final String HISTORY_FILTER_PREFS="offer_history_view_filters_v1";
+    private OfferHistoryFilters historyFilters=OfferHistoryFilters.none();
     private String selectedTab="ALL";
     private String searchTerm="";
     private String dateRange="TODAY";
@@ -52,6 +54,7 @@ public final class OfferHistoryActivity extends Activity {
     @Override public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
         store=new OfferHistoryStore(this);
+        historyFilters=loadHistoryFilters();
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
@@ -91,7 +94,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.3",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.4",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -113,7 +116,7 @@ public final class OfferHistoryActivity extends Activity {
         search.setHint("Search pickup or destination");
         search.setPadding(dp(11),0,dp(11),0);
         search.setBackground(bg(Color.WHITE,BORDER,10));
-        searchRow.addView(search,new LinearLayout.LayoutParams(0,dp(49),1));
+        searchRow.addView(search,new LinearLayout.LayoutParams(-1,dp(49)));
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s,int st,int cnt,int aft) {}
             @Override public void onTextChanged(CharSequence s,int start,int before,int count) {
@@ -121,12 +124,20 @@ public final class OfferHistoryActivity extends Activity {
             }
             @Override public void afterTextChanged(Editable e) {}
         });
+        LinearLayout controls=row();root.addView(controls,box(-2,7));
         dateButton=softButton("Today ▾",v->selectDateRange());
-        LinearLayout.LayoutParams dateParams=new LinearLayout.LayoutParams(dp(124),dp(49));
-        dateParams.leftMargin=dp(7);searchRow.addView(dateButton,dateParams);
+        controls.addView(dateButton,new LinearLayout.LayoutParams(0,dp(46),1));
+        filterButton=softButton("Filters ▾",v->showHistoryFilters());
+        LinearLayout.LayoutParams filterParams=new LinearLayout.LayoutParams(0,dp(46),1);
+        filterParams.leftMargin=dp(8);
+        controls.addView(filterButton,filterParams);
+        filterSummary=label("",11,GREEN,false);
+        filterSummary.setPadding(dp(9),dp(7),dp(9),dp(7));
+        filterSummary.setBackground(bg(Color.rgb(231,247,234),0,9));
+        root.addView(filterSummary,box(-2,11));
 
         LinearLayout actions=row();root.addView(actions,box(-2,14));
-        TextView export=softButton("↓ Export CSV",v->exportCsv());
+        TextView export=softButton("↓ Export all CSV",v->exportCsv());
         actions.addView(export,new LinearLayout.LayoutParams(0,dp(43),1));
         TextView wipe=softButton("Clear history",v->confirmClear());
         LinearLayout.LayoutParams wipeLp=new LinearLayout.LayoutParams(0,dp(43),1);wipeLp.leftMargin=dp(10);
@@ -179,11 +190,88 @@ public final class OfferHistoryActivity extends Activity {
             case "30D":return "Last 30 days ▾";case "ALL":return "All dates ▾";
             default:return "Today ▾";}
     }
+    /** Filters are private history-display preferences; never saved in live offer-rule Prefs. */
+    private OfferHistoryFilters loadHistoryFilters() {
+        SharedPreferences prefs=getSharedPreferences(HISTORY_FILTER_PREFS,MODE_PRIVATE);
+        String[] values=new String[OfferHistoryFilters.FIELD_COUNT];
+        for(int i=0;i<values.length;i++)values[i]=prefs.getString("field_"+i,"");
+        try {return OfferHistoryFilters.fromInputs(values,prefs.getBoolean("match_all",true));}
+        catch(IllegalArgumentException badOldState) {return OfferHistoryFilters.none();}
+    }
+    private void saveHistoryFilters() {
+        SharedPreferences.Editor edit=getSharedPreferences(HISTORY_FILTER_PREFS,MODE_PRIVATE).edit();
+        for(int i=0;i<OfferHistoryFilters.FIELD_COUNT;i++)edit.putString("field_"+i,historyFilters.input(i));
+        edit.putBoolean("match_all",historyFilters.matchAll());
+        edit.apply();
+    }
+    private void showHistoryFilters() {
+        ScrollView scroll=new ScrollView(this);
+        LinearLayout panel=col();panel.setPadding(dp(17),dp(12),dp(17),dp(10));
+        scroll.addView(panel);
+        addLine(panel,"Filter the history you see. These settings never change live offer rules, alerts or auto-declines.",12,GRAY,false,12);
+        addLine(panel,"Enter a minimum, maximum or both. Blank means no limit. Values at the boundary are included.",12,GRAY,false,14);
+        EditText[] fields=new EditText[OfferHistoryFilters.FIELD_COUNT];
+        String[] groupTitles={"PAYMENT · A$", "ESTIMATED ROUTED HOURLY · A$/hr",
+            "PAYOUT PER DISTANCE · A$/km", "ESTIMATED DISTANCE · km"};
+        for(int i=0;i<OfferHistoryFilters.FIELD_COUNT;i+=2) {
+            addLine(panel,groupTitles[i/2],12,GREEN,true,8);
+            LinearLayout pair=row();panel.addView(pair,box(-2,16));
+            for(int j=i;j<i+2;j++) {
+                LinearLayout control=col();
+                LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,-2,1);
+                if(j%2==1)cp.leftMargin=dp(9);
+                pair.addView(control,cp);
+                addLine(control,(j%2==0?"Minimum":"Maximum"),12,DARK,false,5);
+                EditText field=new EditText(this);
+                field.setTextSize(16);field.setSingleLine(true);field.setHint("Any");
+                field.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                field.setPadding(dp(10),0,dp(10),0);
+                field.setBackground(bg(Color.WHITE,BORDER,10));
+                field.setText(historyFilters.input(j));
+                control.addView(field,new LinearLayout.LayoutParams(-1,dp(48)));
+                fields[j]=field;
+            }
+        }
+        addLine(panel,"HOW SHOULD THE FILTERS COMBINE?",12,GREEN,true,8);
+        RadioGroup combine=new RadioGroup(this);
+        combine.setOrientation(RadioGroup.VERTICAL);
+        RadioButton all=new RadioButton(this);all.setText("ALL (AND) — every selected metric must match");
+        RadioButton any=new RadioButton(this);any.setText("ANY (OR) — at least one metric must match");
+        all.setTextSize(13);any.setTextSize(13);
+        all.setId(View.generateViewId());any.setId(View.generateViewId());
+        combine.addView(all);combine.addView(any);
+        combine.check(historyFilters.matchAll()?all.getId():any.getId());
+        panel.addView(combine,box(-2,10));
+        addLine(panel,"An upper and lower bound on the same metric always form one range. Orders with unverified or missing rates cannot match an hourly or A$/km condition.",11,GRAY,false,0);
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("Advanced History Filters")
+            .setView(scroll)
+            .setNegativeButton("Cancel",null)
+            .setNeutralButton("Clear all",(d,w)->{
+                historyFilters=OfferHistoryFilters.none();saveHistoryFilters();visible=35;refreshList();
+            })
+            .setPositiveButton("Apply",null)
+            .create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            String[] values=new String[OfferHistoryFilters.FIELD_COUNT];
+            for(int i=0;i<values.length;i++)values[i]=fields[i].getText().toString();
+            try {
+                OfferHistoryFilters selected=OfferHistoryFilters.fromInputs(values,all.isChecked());
+                historyFilters=selected;
+                saveHistoryFilters();
+                visible=35;refreshList();dialog.dismiss();
+            } catch(IllegalArgumentException error) {
+                Toast.makeText(this,error.getMessage(),Toast.LENGTH_LONG).show();
+            }
+        }));
+        dialog.show();
+    }
     private void refreshList() {
         if(results==null)return;
         if(activeRules!=null)activeRules.setText(OfferRuleEngine.summary(Prefs.rules(Prefs.of(this))));
         final long cutoff=firstIncludedMillis();
-        OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff);
+        OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters);
         summary.removeAllViews();averages.removeAllViews();
         if("ACCEPTED".equals(selectedTab)) {
             headerSub.setText("Confirmed accepted offers and their estimated averages");
@@ -201,7 +289,7 @@ public final class OfferHistoryActivity extends Activity {
             summaryItem(averages,"Avg. $/km",s.averagePerKm(),Color.rgb(229,249,235));
         } else {
             headerSub.setText("Your offer performance and estimated earning rates");
-            summaryItem(summary,"All offers",Integer.toString(s.count()),Color.WHITE);
+            summaryItem(summary,historyFilters.active()?"Matching offers":"All offers",Integer.toString(s.count()),Color.WHITE);
             summaryItem(summary,"Accepted",Integer.toString(s.accepted()),Color.rgb(226,247,230));
             summaryItem(summary,"Declined",Integer.toString(s.declined()),Color.rgb(255,238,237));
             summaryItem(summary,"Highest",s.highestOffer(),Color.rgb(229,247,233));
@@ -212,18 +300,28 @@ public final class OfferHistoryActivity extends Activity {
         }
         tabs.removeAllViews();tab("All offers","ALL");tab("Accepted","ACCEPTED");tab("Highest","HIGHEST");
         dateButton.setText(periodLabel());
+        filterButton.setText(historyFilters.active()?"Filters ("+historyFilters.activeGroups()+") ▾":"Filters ▾");
+        filterButton.setBackground(bg(historyFilters.active()?Color.rgb(225,247,230):Color.WHITE,
+            historyFilters.active()?Color.rgb(148,207,160):BORDER,12));
+        filterSummary.setVisibility(historyFilters.active()?View.VISIBLE:View.GONE);
+        filterSummary.setText(historyFilters.summary()+"   ·   Display only; auto-decline rules unchanged");
         results.removeAllViews();
         if("ACCEPTED".equals(selectedTab))
             addLine(results,"Estimated total of accepted offers in this view: "+s.acceptedEstimate(),13,GREEN,true,9);
         else if("HIGHEST".equals(selectedTab))
             addLine(results,"Highest offered amounts · ranked by payout",13,GRAY,false,9);
         addLine(results,"Averages use every matching offer, including offers below the visible list limit. Hourly and kilometre averages omit offers with missing time or distance.",11,GRAY,false,11);
-        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,Math.min(100,visible),0);
+        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,Math.min(100,visible),0);
         if(offers.isEmpty()) {
             LinearLayout empty=col();empty.setPadding(dp(15),dp(28),dp(15),dp(28));
             empty.setBackground(bg(Color.WHITE,BORDER,14));results.addView(empty,box(-2,8));
-            addLine(empty,"No offers in this view",17,DARK,true,9);
-            addLine(empty,"Open Uber Driver with monitoring enabled. Newly detected offers appear here. If an outcome is unknown, open an offer to mark it.",13,GRAY,false,0);
+            addLine(empty,"No offers match this view",17,DARK,true,9);
+            addLine(empty,historyFilters.active()?"Try a wider price/rate range, change the date period, or clear the history filters.":
+                "Open Uber Driver with monitoring enabled. Newly detected offers appear here. If an outcome is unknown, open an offer to mark it.",13,GRAY,false,8);
+            if(historyFilters.active()) {
+                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();saveHistoryFilters();visible=35;refreshList();});
+                empty.addView(reset,box(45,0));
+            }
             return;
         }
         int rank=0;
@@ -261,12 +359,12 @@ public final class OfferHistoryActivity extends Activity {
         addLine(card,"⌖  Deliver to: "+fallback(item.destination),13,DARK,false,9);
         addLine(card,"◷  "+(item.minutes>0?item.minutes+" min":"Duration unknown")+
             "   ·   "+OfferRate.distance(item.metres),12,MUTED,false,4);
-        addLine(card,"◈  "+(item.trustworthyRates()?OfferRate.dollarsPerKm(item.cents,item.metres):
-                    "Per-km UNVERIFIED")+
-            "     |     "+(item.trustworthyRates()?OfferRate.dollarsPerHour(item.cents,item.minutes):
-                    "Hourly rate UNVERIFIED"),13,GREEN,true,0);
+        addLine(card,"◈  "+(item.trustworthyRates()&&item.metres>0?OfferRate.dollarsPerKm(item.cents,item.metres):
+                    "A$/km Unknown")+
+            "     |     "+(item.trustworthyRates()&&item.minutes>0?OfferRate.dollarsPerHour(item.cents,item.minutes):
+                    "A$/hr Unknown"),13,GREEN,true,0);
         if(!item.trustworthyRates())
-            addLine(card,"Legacy single-frame OCR: duration not confirmed",11,GRAY,false,0);
+            addLine(card,"Rate not verified: cannot use for hourly or A$/km filters",11,GRAY,false,0);
         card.setOnClickListener(v->showDetail(item.id));
     }
     private static String fallback(String value) {return value==null||value.trim().isEmpty()?"Not readable on offer":value;}
@@ -284,8 +382,8 @@ public final class OfferHistoryActivity extends Activity {
             "%s  ·  %s\n\nPickup: %s\n\nDeliver to: %s\n\nEstimated duration: %s\nEstimated distance: %s\nEstimated payout per km: %s\nEstimated payout per hour: %s\n\nReading status: %s (%d frames)\nParsed time: %d hr + %d min\nRaw payout: %s\nRaw duration: %s\nRaw distance: %s\nValidation: %s\n\nOutcome: %s%s\n\nSelect an outcome only if you know what happened to this request.",
             OfferRate.money(item.cents),item.type,fallback(item.pickup),fallback(item.destination),
             item.minutes>0?item.minutes+" min":"Unknown",OfferRate.distance(item.metres),
-            item.trustworthyRates()?OfferRate.dollarsPerKm(item.cents,item.metres):"UNVERIFIED",
-            item.trustworthyRates()?OfferRate.dollarsPerHour(item.cents,item.minutes):"UNVERIFIED",
+            item.trustworthyRates()&&item.metres>0?OfferRate.dollarsPerKm(item.cents,item.metres):"Unknown / unverified",
+            item.trustworthyRates()&&item.minutes>0?OfferRate.dollarsPerHour(item.cents,item.minutes):"Unknown / unverified",
             item.extractionStatus,item.verifiedFrames,
             item.parsedHours,item.parsedMinutes,fallback(item.rawPayout),
             fallback(item.rawDuration),fallback(item.rawDistance),

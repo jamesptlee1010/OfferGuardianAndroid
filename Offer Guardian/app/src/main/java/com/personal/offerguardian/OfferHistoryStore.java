@@ -85,6 +85,35 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         return getWritableDatabase().insertOrThrow(TABLE,null,values);
     }
 
+    /**
+     * Store a two-image confirmed hour LOWER bound without inventing minutes.
+     * History and SQL filters must see an UNKNOWN hourly rate until a later
+     * pair of complete, consistent reads upgrades the same row.
+     */
+    public synchronized long recordHourBound(int payoutCents,
+            OfferDetailsParser.Details details,String rawPayout) {
+        if (!OfferSafeDecline.hasReliableHourBound(details))
+            throw new IllegalArgumentException("No reliable duration lower bound");
+        ContentValues values=new ContentValues();
+        values.put("seen_at",System.currentTimeMillis());
+        values.put("payout_cents",payoutCents);
+        values.put("type",details.type);
+        values.put("pickup",details.pickup);
+        values.put("destination",details.destination);
+        values.put("minutes",0);  // Deliberately unknown, NOT parsedHours*60.
+        values.put("metres",details.metres);
+        values.put("raw_payout",rawPayout==null?"":rawPayout);
+        values.put("raw_duration",details.rawDuration);
+        values.put("raw_distance",details.rawDistance);
+        values.put("extraction_status","HOUR_BOUND");
+        values.put("extraction_note","Two confirming frames; duration at least " +
+                (details.parsedHours*60)+" min. Remaining minutes unreadable; hourly unknown.");
+        values.put("verified_frames",2);
+        values.put("parsed_hours",details.parsedHours);
+        values.put("parsed_minutes",0);
+        return getWritableDatabase().insertOrThrow(TABLE,null,values);
+    }
+
     /** Replace metrics only after two NEW consistent and plausible observations. */
     public synchronized void correctVerified(long id,OfferDetailsParser.Details d,String rawPayout) {
         if(id<=0||!OfferExtractionGuard.check(d).valid)return;
@@ -157,7 +186,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         final List<String> args;
         Filter(String w,List<String> a) {where=w;args=a;}
     }
-    private Filter filter(String tab,String search,long firstIncludedMillis) {
+    private Filter filter(String tab,String search,long firstIncludedMillis,OfferHistoryFilters historyFilters) {
         StringBuilder where=new StringBuilder("1=1");
         List<String> args=new ArrayList<>();
         if("ACCEPTED".equals(tab)) where.append(" AND outcome='ACCEPTED'");
@@ -170,10 +199,19 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             String token="%"+search.trim()+"%";
             args.add(token);args.add(token);args.add(token);
         }
+        if(historyFilters!=null && historyFilters.active()) {
+            OfferHistoryFilters.Sql display=historyFilters.toSql();
+            where.append(" AND ").append(display.where);
+            args.addAll(display.args);
+        }
         return new Filter(where.toString(),args);
     }
     public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,int limit,int offset) {
-        Filter filter=filter(tab,search,firstIncludedMillis);
+        return list(tab,search,firstIncludedMillis,OfferHistoryFilters.none(),limit,offset);
+    }
+    public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
+                                        OfferHistoryFilters displayFilters,int limit,int offset) {
+        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters);
         List<String> args=new ArrayList<>(filter.args);
         String order="HIGHEST".equals(tab) ? "payout_cents DESC, seen_at DESC":"seen_at DESC";
         String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes "+
@@ -188,7 +226,11 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     }
     /** Aggregates all matching rows, not just the first page displayed on screen. */
     public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis) {
-        Filter filter=filter(tab,search,firstIncludedMillis);
+        return statistics(tab,search,firstIncludedMillis,OfferHistoryFilters.none());
+    }
+    public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis,
+                                                     OfferHistoryFilters displayFilters) {
+        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters);
         OfferHistoryStats stats=new OfferHistoryStats();
         String sql="SELECT payout_cents,CASE WHEN extraction_status IN ('VERIFIED','CORRECTED') " +
             "THEN minutes ELSE 0 END," +

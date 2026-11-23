@@ -43,7 +43,7 @@ public final class OfferHistoryActivity extends Activity {
     private static final int BORDER=Color.rgb(224,231,226);
     private static final int REQUEST_CSV=102;
     private OfferHistoryStore store;
-    private LinearLayout root,results,tabs,summary,averages,deliveryFilterRow;
+    private LinearLayout root,results,tabs,summary,averages,deliveryFilterRow,matchRateRow;
     private EditText search;
     private TextView dateButton,filterButton,sortButton,filterSummary,sortSummary,headerSub,activeRules;
     private static final String HISTORY_FILTER_PREFS="offer_history_view_filters_v1";
@@ -103,7 +103,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.10",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.11",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -116,7 +116,8 @@ public final class OfferHistoryActivity extends Activity {
         rulesBox.setOnClickListener(v->startActivity(new Intent(this,OfferRulesActivity.class)));
 
         summary=row();summary.setGravity(Gravity.TOP);root.addView(summary,box(-2,8));
-        averages=row();averages.setGravity(Gravity.TOP);root.addView(averages,box(-2,16));
+        averages=row();averages.setGravity(Gravity.TOP);root.addView(averages,box(-2,8));
+        matchRateRow=col();root.addView(matchRateRow,box(-2,12));
         tabs=row();tabs.setBackground(bg(Color.rgb(237,243,238),0,12));
         tabs.setPadding(dp(4),dp(4),dp(4),dp(4));root.addView(tabs,box(50,12));
 
@@ -301,7 +302,7 @@ public final class OfferHistoryActivity extends Activity {
             shell.addView(chip,lp);
         }
         if(deliveryQuickFilter.active()) {
-            TextView hint=label("Showing "+deliveryQuickFilter.summary(),12,GRAY,false);
+            TextView hint=label("Showing "+deliveryQuickFilter.summary()+" · older unknown-count offers appear under All",12,GRAY,false);
             hint.setGravity(Gravity.CENTER_HORIZONTAL);
             deliveryFilterRow.addView(hint,box(-2,0));
         }
@@ -401,6 +402,26 @@ public final class OfferHistoryActivity extends Activity {
         if(activeRules!=null)activeRules.setText(Prefs.ruleSummary(Prefs.of(this)));
         final long cutoff=firstIncludedMillis();
         OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters,historyTime,deliveryQuickFilter);
+        int timelineTotal=store.totalInTimeline(cutoff,historyTime);
+        boolean criteriaActive=historyFilters.active() || deliveryQuickFilter.active() ||
+                !searchTerm.trim().isEmpty();
+        matchRateRow.removeAllViews();
+        matchRateRow.setVisibility(criteriaActive?View.VISIBLE:View.GONE);
+        if(criteriaActive) {
+            LinearLayout matchCard=row();
+            matchCard.setPadding(dp(13),dp(11),dp(13),dp(11));
+            matchCard.setBackground(bg(Color.rgb(228,248,235),Color.rgb(179,218,192),12));
+            LinearLayout textCol=col();
+            matchCard.addView(textCol,new LinearLayout.LayoutParams(0,-2,1));
+            addLine(textCol,"OFFERS MATCHING YOUR FILTERS",11,GREEN,true,3);
+            addLine(textCol,s.count()+" of "+timelineTotal+" offers in selected date/time window",12,DARK,false,0);
+            String matchPercentage=timelineTotal==0?"—":
+                    String.format(Locale.US,"%.1f%%",100.0*s.count()/timelineTotal);
+            TextView rate=label(matchPercentage,24,GREEN,true);
+            rate.setGravity(Gravity.CENTER_VERTICAL);
+            matchCard.addView(rate);
+            matchRateRow.addView(matchCard,box(-2,0));
+        }
         summary.removeAllViews();averages.removeAllViews();
         if("ACCEPTED".equals(selectedTab)) {
             headerSub.setText("Confirmed accepted offers and their estimated averages");
@@ -497,14 +518,14 @@ public final class OfferHistoryActivity extends Activity {
             first.addView(ranking);}
         TextView price=label(OfferRate.money(item.cents),23,rank==1?GREEN:DARK,true);
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.leftMargin=rank>0?dp(7):0;first.addView(price,p);
-        int deliveryCount=OfferHistoryDeliveryFilter.detectCount(item.type);
+        int deliveryCount=item.deliveryCount;
         if(deliveryCount>0) first.addView(pill(deliveryCount==1?"1 Delivery":deliveryCount+" Deliveries",Color.rgb(227,246,229),GREEN));
         int badgeColor=OfferHistoryStore.ACCEPTED.equals(item.outcome)?GREEN:
             OfferHistoryStore.DECLINED.equals(item.outcome)?Color.rgb(168,45,43):GRAY;
         String outcome=offerOutcome(item);
         first.addView(pill(outcome,OfferHistoryStore.ACCEPTED.equals(item.outcome)?Color.rgb(227,249,230):
             OfferHistoryStore.DECLINED.equals(item.outcome)?Color.rgb(255,238,237):Color.rgb(241,243,242),badgeColor));
-        addLine(card,item.type+"   ·   "+new SimpleDateFormat("EEE d MMM, h:mm a",Locale.getDefault()).format(new Date(item.seenAt)),12,GRAY,false,8);
+        addLine(card,historyTypeLabel(item)+"   ·   "+new SimpleDateFormat("EEE d MMM, h:mm a",Locale.getDefault()).format(new Date(item.seenAt)),12,GRAY,false,8);
         addLine(card,"↗  Pickup: "+fallback(item.pickup),14,DARK,true,5);
         addLine(card,"⌖  Deliver to: "+fallback(item.destination),13,DARK,false,9);
         addLine(card,"◷  "+(item.minutes>0?item.minutes+" min":"Duration unknown")+
@@ -516,6 +537,13 @@ public final class OfferHistoryActivity extends Activity {
         if(!item.trustworthyRates())
             addLine(card,"Rate not verified: cannot use for hourly or A$/km filters",11,GRAY,false,0);
         card.setOnClickListener(v->showDetail(item.id));
+    }
+    private static String historyTypeLabel(OfferHistoryStore.Item item) {
+        if(item.deliveryCount<=0)return item.type;
+        String base=item.type==null?"Delivery":item.type;
+        if(base.contains("(multiple)"))base=base.replace("(multiple)","").trim();
+        if(base.matches(".*\\([0-9]+\\).*"))return base;
+        return item.deliveryCount==1?base:base+" ("+item.deliveryCount+")";
     }
     private static String fallback(String value) {return value==null||value.trim().isEmpty()?"Not readable on offer":value;}
     private String offerOutcome(OfferHistoryStore.Item item) {
@@ -530,7 +558,7 @@ public final class OfferHistoryActivity extends Activity {
         OfferHistoryStore.Item item=store.byId(id);if(item==null)return;
         String detail=String.format(Locale.US,
             "%s  ·  %s\n\nPickup: %s\n\nDeliver to: %s\n\nEstimated duration: %s\nEstimated distance: %s\nEstimated payout per km: %s\nEstimated payout per hour: %s\n\nReading status: %s (%d frames)\nParsed time: %d hr + %d min\nRaw payout: %s\nRaw duration: %s\nRaw distance: %s\nValidation: %s\n\nOutcome: %s%s\n\nSelect an outcome only if you know what happened to this request.",
-            OfferRate.money(item.cents),item.type,fallback(item.pickup),fallback(item.destination),
+            OfferRate.money(item.cents),historyTypeLabel(item)+(item.deliveryCount>0?" · "+item.deliveryCount+" deliveries":" · Count unknown"),fallback(item.pickup),fallback(item.destination),
             item.minutes>0?item.minutes+" min":"Unknown",OfferRate.distance(item.metres),
             item.trustworthyRates()&&item.metres>0?OfferRate.dollarsPerKm(item.cents,item.metres):"Unknown / unverified",
             item.trustworthyRates()&&item.minutes>0?OfferRate.dollarsPerHour(item.cents,item.minutes):"Unknown / unverified",

@@ -11,3 +11,6 @@ The workflow runs host-side regression checks, sets up Java 17, Android SDK 35 a
 **Before uninstalling any previous version, export Offer History to CSV.** Debug builds may have different signing certificates and might require uninstalling, which erases local settings/history.
 
 After installation, check your three delivery-specific payout/hourly settings. In History, open **Filters** and use the optional **Time of day** section. Start with TEST ONLY before enabling automatic declines, especially when Waze is foreground.
+
+## v0.9.11
+This ZIP includes the full source tree (not an APK). Upload the **extracted files** to your GitHub repository, preserving `.github/workflows/build-apk.yml`, then run the Build Offer Guardian APK workflow. Do not upload the ZIP as a single GitHub repository file. Update your existing source files rather than nesting a second project inside the repository.

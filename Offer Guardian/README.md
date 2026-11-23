@@ -40,3 +40,9 @@ Host-side Java/SQLite regression checks are included in the workflow. They cover
 ## v0.9.10
 - Offer History quick filter chips for All / 1 / 2 / 3 deliveries.
 - Delivery-count filtering combines with date, search, advanced filters, time windows and sorting.
+
+## v0.9.11 — History delivery counts + match percentage
+- Store and filter on a verified numeric delivery count (1, 2, 3), not the generic offer type string.
+- Recover only explicitly evidenced old counts; ambiguous records remain `Unknown count` under All.
+- When a qualifying filter or search is active, show the percentage of matching offers over all offers in the chosen date/time window.
+- The live Uber/Waze rule engine remains unchanged.

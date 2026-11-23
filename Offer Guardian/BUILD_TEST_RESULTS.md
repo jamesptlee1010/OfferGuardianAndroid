@@ -1,15 +1,16 @@
-# Offer Guardian v0.9.10 build / test results
+# OfferGuardian v0.9.11 — test results
 
-## Implemented
-- Offer History quick delivery-count filter chips: All / 1 / 2 / 3.
-- Filtering wired into history list queries and aggregate statistics.
-- Quick filter persists locally with the rest of the history display preferences.
-- Delivery-count badges shown on history cards when the stored offer heading clearly indicates 1, 2 or 3 deliveries.
+## Source changes
+- Added SQLite v3 `delivery_count` with conservative migration from v1/v2.
+- New offers persist their recognized numeric delivery count instead of depending on generic type labels.
+- History quick filter uses `delivery_count` for All / 1 / 2 / 3.
+- History offer cards display recovered counts and normalize generic labels when a count is known.
+- New filtered-match percentage card computes matching items divided by all offers in selected date/time window.
+- CSV includes delivery-count field (UNKNOWN for ambiguous historical offers).
 
-## Verification performed
-- Compiled and ran `OfferHistoryDeliveryFilterStandaloneTest` successfully.
-- Verified quick filter logic treats bare `Delivery` / `Pack & Deliver` as 1 delivery, `(2)` as two deliveries and `(3)` as three deliveries.
-- Confirmed ambiguous headings such as `Delivery (multiple)` remain excluded from 1/2/3 quick filters and visible only under All.
-
-## Notes
-- This is a history-display filter only. It does not alter live rule evaluation, alerting or auto-decline behaviour.
+## Verified in this environment
+- **24 of 24 available host-side GitHub workflow checks passed**, split into two groups to stay within execution limits.
+- SQL v1-to-v3 migration verified with ambiguous historical values retained as unknown.
+- Numeric delivery filtering and combined hourly-rate/time-window share calculations verified using SQLite.
+- Existing standalone OCR, historical filters, Waze, tiered rules, and overlay regressions passed.
+- GitHub APK workflow retained, but **Android APK compilation and on-device testing were not possible here** (Android SDK/Gradle unavailable).

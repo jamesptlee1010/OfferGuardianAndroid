@@ -28,6 +28,11 @@ final class Prefs {
     static final String RULE_MODE = "rule_combine_mode";
     static final String RULE_DELIVERIES = "rule_min_deliveries_enabled";
     static final String RULE_MIN_DELIVERIES = "rule_min_deliveries";
+    // v0.9.8: new, explicitly activated tier rules. Legacy keys are retained
+    // untouched so an upgrade does not silently change existing decline behaviour.
+    static final String TIERED_ACTIVE = "tiered_rules_active_v098";
+    static final String TIERED_GENERATION = "tiered_rules_generation_v098";
+    private static final String TIER_KEY = "tier_v098_";
     static final String LEARNING = "learning";
     static final String PENDING = "pending";
     static final String PENDING_ID = "pending_id";
@@ -62,6 +67,36 @@ final class Prefs {
     }
     static float threshold(SharedPreferences p) {
         return p.getFloat(THRESHOLD, 30.0f);
+    }
+    static boolean tieredEnabled(SharedPreferences p) {return p.getBoolean(TIERED_ACTIVE,false);}
+    static String tierKey(int count,String field) {
+        if(count<1||count>3)throw new IllegalArgumentException("Tier must be 1, 2 or 3");
+        return TIER_KEY+count+"_"+field;
+    }
+    static TieredOfferRules tieredRules(SharedPreferences p) {
+        OfferRuleEngine.Config legacy=rules(p);
+        OfferRuleEngine.Config[] cs=new OfferRuleEngine.Config[3];
+        boolean[] enabled=new boolean[3];
+        for(int i=0;i<3;i++) {
+            int n=i+1;
+            enabled[i]=p.getBoolean(tierKey(n,"enabled"),true);
+            OfferRuleEngine.Mode mode="ALL".equals(p.getString(tierKey(n,"mode"),legacy.mode.name()))
+                    ?OfferRuleEngine.Mode.ALL:OfferRuleEngine.Mode.ANY;
+            cs[i]=new OfferRuleEngine.Config(
+                p.getBoolean(tierKey(n,"price_on"),legacy.priceOn),
+                p.getFloat(tierKey(n,"min_price"),(float)legacy.minPrice),
+                p.getBoolean(tierKey(n,"hourly_on"),legacy.hourlyOn),
+                p.getFloat(tierKey(n,"min_hourly"),(float)legacy.minHourly),
+                p.getBoolean(tierKey(n,"km_on"),legacy.kilometreOn),
+                p.getFloat(tierKey(n,"min_per_km"),(float)legacy.minPerKm),mode,
+                false,1,
+                p.getBoolean(tierKey(n,"distance_on"),false),
+                p.getFloat(tierKey(n,"max_distance"),15.0f));
+        }
+        return new TieredOfferRules(cs,enabled);
+    }
+    static String ruleSummary(SharedPreferences p) {
+        return tieredEnabled(p)?tieredRules(p).summary():OfferRuleEngine.summary(rules(p));
     }
     static OfferRuleEngine.Config rules(SharedPreferences p) {
         String selection=p.getString(RULE_MODE,"ANY");

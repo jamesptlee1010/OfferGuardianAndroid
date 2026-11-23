@@ -1,7 +1,5 @@
-# Replace the existing project with v0.9.6
+# Replace existing GitHub project — v0.9.8
 
-Extract this ZIP. Upload these exact **top-level contents** to GitHub: `.github/`, `app/`, `tests/`, `build.gradle`, `settings.gradle`, `gradle.properties`, and docs. Never create `OfferGuardianAndroid/OfferGuardianAndroid` nested copies.
+Extract the source ZIP. Upload the **top-level contents**: `.github/`, `app/`, `tests/`, `build.gradle`, `settings.gradle`, `gradle.properties`, and documentation files. Do not create a nested `OfferGuardianAndroid/OfferGuardianAndroid` folder. The GitHub workflow locates a complete v0.9.8 project and rejects old version names; remove old nested versions and obsolete workflows to avoid mistakes.
 
-For a completely clean repository, remove older nested project directories and previous workflows after backing up any files you need. Keep only `.github/workflows/build-apk.yml`. The workflow is version locked to 0.9.6 to reduce the risk of compiling stale app versions.
-
-Android data is stored on your device and cannot be recovered from a ZIP of the source code. Export your history before removing the installed app.
+GitHub's browser upload limit is 100 files at once, and this package contains fewer than 100 files. Include hidden `.github` when uploading. If an old app was installed with a different debug key, export your full History before any required uninstall.

@@ -43,8 +43,10 @@ public final class OfferHistoryActivity extends Activity {
     private OfferHistoryStore store;
     private LinearLayout root,results,tabs,summary,averages;
     private EditText search;
-    private TextView dateButton,filterButton,filterSummary,headerSub,activeRules;
+    private TextView dateButton,filterButton,sortButton,filterSummary,sortSummary,headerSub,activeRules;
     private static final String HISTORY_FILTER_PREFS="offer_history_view_filters_v1";
+    private static final String HISTORY_SORT_PREFS="offer_history_view_sort_v1";
+    private OfferHistorySort historySort=OfferHistorySort.NEWEST;
     private OfferHistoryFilters historyFilters=OfferHistoryFilters.none();
     private String selectedTab="ALL";
     private String searchTerm="";
@@ -55,6 +57,7 @@ public final class OfferHistoryActivity extends Activity {
         super.onCreate(bundle);
         store=new OfferHistoryStore(this);
         historyFilters=loadHistoryFilters();
+        historySort=loadHistorySort();
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
@@ -94,7 +97,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.4",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.8",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -131,6 +134,14 @@ public final class OfferHistoryActivity extends Activity {
         LinearLayout.LayoutParams filterParams=new LinearLayout.LayoutParams(0,dp(46),1);
         filterParams.leftMargin=dp(8);
         controls.addView(filterButton,filterParams);
+        sortButton=softButton("Sort ▾",v->selectHistorySort());
+        sortButton.setAutoSizeTextTypeUniformWithConfiguration(10,13,1,TypedValue.COMPLEX_UNIT_SP);
+        LinearLayout.LayoutParams sortParams=new LinearLayout.LayoutParams(0,dp(46),1);
+        sortParams.leftMargin=dp(8);
+        controls.addView(sortButton,sortParams);
+        sortSummary=label("",11,GRAY,false);
+        sortSummary.setPadding(dp(9),dp(3),dp(9),dp(2));
+        root.addView(sortSummary,box(-2,4));
         filterSummary=label("",11,GREEN,false);
         filterSummary.setPadding(dp(9),dp(7),dp(9),dp(7));
         filterSummary.setBackground(bg(Color.rgb(231,247,234),0,9));
@@ -150,7 +161,15 @@ public final class OfferHistoryActivity extends Activity {
         TextView t=label(label,14,selectedTab.equals(value)?Color.WHITE:DARK,true);
         t.setGravity(Gravity.CENTER);
         t.setBackground(bg(selectedTab.equals(value)?GREEN:Color.TRANSPARENT,0,9));
-        t.setOnClickListener(v->{selectedTab=value;visible=35;refreshList();});
+        t.setOnClickListener(v->{
+            selectedTab=value;
+            if("HIGHEST".equals(value)) {
+                historySort=OfferHistorySort.PAYMENT_HIGH;
+                saveHistorySort();
+            }
+            visible=35;
+            refreshList();
+        });
         tabs.addView(t,new LinearLayout.LayoutParams(0,-1,1));
     }
     private void summaryItem(LinearLayout target,String title,String amount,int color) {
@@ -203,6 +222,28 @@ public final class OfferHistoryActivity extends Activity {
         for(int i=0;i<OfferHistoryFilters.FIELD_COUNT;i++)edit.putString("field_"+i,historyFilters.input(i));
         edit.putBoolean("match_all",historyFilters.matchAll());
         edit.apply();
+    }
+    private OfferHistorySort loadHistorySort() {
+        String code=getSharedPreferences(HISTORY_SORT_PREFS,MODE_PRIVATE)
+            .getString("order",OfferHistorySort.NEWEST.code);
+        return OfferHistorySort.fromCode(code);
+    }
+    private void saveHistorySort() {
+        getSharedPreferences(HISTORY_SORT_PREFS,MODE_PRIVATE).edit()
+            .putString("order",historySort.code).apply();
+    }
+    private void selectHistorySort() {
+        OfferHistorySort[] choices=OfferHistorySort.values();
+        String[] names=new String[choices.length];
+        for(int i=0;i<choices.length;i++)names[i]=choices[i].label;
+        new AlertDialog.Builder(this).setTitle("Sort Offer History")
+            .setSingleChoiceItems(names,historySort.ordinal(),(dialog,index)->{
+                historySort=choices[index];
+                saveHistorySort();
+                visible=35;
+                dialog.dismiss();
+                refreshList();
+            }).setNegativeButton("Cancel",null).show();
     }
     private void showHistoryFilters() {
         ScrollView scroll=new ScrollView(this);
@@ -269,7 +310,7 @@ public final class OfferHistoryActivity extends Activity {
     }
     private void refreshList() {
         if(results==null)return;
-        if(activeRules!=null)activeRules.setText(OfferRuleEngine.summary(Prefs.rules(Prefs.of(this))));
+        if(activeRules!=null)activeRules.setText(Prefs.ruleSummary(Prefs.of(this)));
         final long cutoff=firstIncludedMillis();
         OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters);
         summary.removeAllViews();averages.removeAllViews();
@@ -281,7 +322,7 @@ public final class OfferHistoryActivity extends Activity {
             summaryItem(averages,"Avg. $/hr",s.averageHourly(),Color.rgb(229,249,235));
             summaryItem(averages,"Avg. $/km",s.averagePerKm(),Color.rgb(229,249,235));
         } else if("HIGHEST".equals(selectedTab)) {
-            headerSub.setText("All offers ranked by estimated total payout");
+            headerSub.setText("Top offers · "+historySort.label.toLowerCase(Locale.US));
             summaryItem(summary,"Highest",s.highestOffer(),Color.rgb(226,247,230));
             summaryItem(summary,"Avg. offer",s.averageOffer(),Color.rgb(229,249,235));
             averages.setVisibility(View.VISIBLE);
@@ -301,6 +342,10 @@ public final class OfferHistoryActivity extends Activity {
         tabs.removeAllViews();tab("All offers","ALL");tab("Accepted","ACCEPTED");tab("Highest","HIGHEST");
         dateButton.setText(periodLabel());
         filterButton.setText(historyFilters.active()?"Filters ("+historyFilters.activeGroups()+") ▾":"Filters ▾");
+        sortButton.setText(historySort.shortLabel);
+        sortButton.setBackground(bg(historySort==OfferHistorySort.NEWEST?Color.WHITE:Color.rgb(225,247,230),
+            historySort==OfferHistorySort.NEWEST?BORDER:Color.rgb(148,207,160),12));
+        sortSummary.setText("Sorting: "+historySort.label+" · shown after date, search and filters");
         filterButton.setBackground(bg(historyFilters.active()?Color.rgb(225,247,230):Color.WHITE,
             historyFilters.active()?Color.rgb(148,207,160):BORDER,12));
         filterSummary.setVisibility(historyFilters.active()?View.VISIBLE:View.GONE);
@@ -309,9 +354,9 @@ public final class OfferHistoryActivity extends Activity {
         if("ACCEPTED".equals(selectedTab))
             addLine(results,"Estimated total of accepted offers in this view: "+s.acceptedEstimate(),13,GREEN,true,9);
         else if("HIGHEST".equals(selectedTab))
-            addLine(results,"Highest offered amounts · ranked by payout",13,GRAY,false,9);
+            addLine(results,"Ranking: "+historySort.label,13,GRAY,false,9);
         addLine(results,"Averages use every matching offer, including offers below the visible list limit. Hourly and kilometre averages omit offers with missing time or distance.",11,GRAY,false,11);
-        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,Math.min(100,visible),0);
+        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,Math.min(100,visible),0);
         if(offers.isEmpty()) {
             LinearLayout empty=col();empty.setPadding(dp(15),dp(28),dp(15),dp(28));
             empty.setBackground(bg(Color.WHITE,BORDER,14));results.addView(empty,box(-2,8));

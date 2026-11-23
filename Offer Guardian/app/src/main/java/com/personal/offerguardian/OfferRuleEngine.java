@@ -10,8 +10,8 @@ public final class OfferRuleEngine {
     public enum Outcome { SHOW, DECLINE, REVIEW }
 
     public static final class Config {
-        public final boolean priceOn, hourlyOn, kilometreOn, deliveriesOn;
-        public final double minPrice, minHourly, minPerKm;
+        public final boolean priceOn, hourlyOn, kilometreOn, deliveriesOn, maxDistanceOn;
+        public final double minPrice, minHourly, minPerKm, maxDistanceKm;
         public final int minDeliveries;
         public final Mode mode;
         public Config(boolean priceOn, double minPrice, boolean hourlyOn, double minHourly,
@@ -22,18 +22,26 @@ public final class OfferRuleEngine {
         public Config(boolean priceOn,double minPrice,boolean hourlyOn,double minHourly,
                       boolean kilometreOn,double minPerKm,Mode mode,
                       boolean deliveriesOn,int minDeliveries) {
+            this(priceOn,minPrice,hourlyOn,minHourly,kilometreOn,minPerKm,mode,
+                    deliveriesOn,minDeliveries,false,0);
+        }
+        public Config(boolean priceOn,double minPrice,boolean hourlyOn,double minHourly,
+                      boolean kilometreOn,double minPerKm,Mode mode,
+                      boolean deliveriesOn,int minDeliveries,boolean maxDistanceOn,double maxDistanceKm) {
+            this.maxDistanceOn=maxDistanceOn;this.maxDistanceKm=maxDistanceKm;
             this.priceOn=priceOn; this.minPrice=minPrice;
             this.hourlyOn=hourlyOn; this.minHourly=minHourly;
             this.kilometreOn=kilometreOn; this.minPerKm=minPerKm;
             this.mode=mode == null ? Mode.ANY : mode;
             this.deliveriesOn=deliveriesOn;this.minDeliveries=minDeliveries;
         }
-        public int count() {return (priceOn?1:0)+(hourlyOn?1:0)+(kilometreOn?1:0);}
+        public int count() {return (priceOn?1:0)+(hourlyOn?1:0)+(kilometreOn?1:0)+(maxDistanceOn?1:0);}
         public boolean valid() {
             return (count()>0 || deliveriesOn) && (!deliveriesOn || (minDeliveries>=1 && minDeliveries<=4)) &&
                 (!priceOn || validValue(minPrice)) &&
                 (!hourlyOn || validValue(minHourly)) &&
-                (!kilometreOn || validValue(minPerKm));
+                (!kilometreOn || validValue(minPerKm)) &&
+                (!maxDistanceOn || validValue(maxDistanceKm));
         }
     }
 
@@ -95,6 +103,15 @@ public final class OfferRuleEngine {
                 append(detail,"per km "+money(km)+(met?" meets ":" below ")+money(config.minPerKm));
             }
         }
+        if(config.maxDistanceOn) {
+            if(metres<=0) {missing++;append(detail,"distance unavailable");}
+            else {
+                boolean met=metres<=config.maxDistanceKm*1000.0;
+                if(met)passed++;else failed++;
+                append(detail,String.format(Locale.US,"distance %.1f km %s maximum %.1f km",
+                        metres/1000.0,met?"within":"exceeds",config.maxDistanceKm));
+            }
+        }
         if(config.mode==Mode.ANY && passed>0)
             return new Decision(Outcome.SHOW,"ANY (OR): "+detail,payout,hourly,km);
         // Conservative rule: if a selected metric is absent, never automatically decline,
@@ -115,6 +132,7 @@ public final class OfferRuleEngine {
         if(c.priceOn)append(b,String.format(Locale.US,"Payment ≥ A$%.2f",c.minPrice));
         if(c.hourlyOn)append(b,String.format(Locale.US,"Hourly ≥ A$%.2f/hr",c.minHourly));
         if(c.kilometreOn)append(b,String.format(Locale.US,"Distance rate ≥ A$%.2f/km",c.minPerKm));
+        if(c.maxDistanceOn)append(b,String.format(Locale.US,"Distance ≤ %.1f km",c.maxDistanceKm));
         String monetary=b.toString().replace("; ",c.mode==Mode.ANY?"  OR  ":"  AND  ");
         if(c.deliveriesOn) return "Deliveries ≥ "+c.minDeliveries+" (REQUIRED)"+
                 (monetary.isEmpty()?"":"  AND  ("+monetary+")");

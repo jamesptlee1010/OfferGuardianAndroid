@@ -170,7 +170,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.9.6  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v0.9.8  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
@@ -181,7 +181,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout settings = card(root, "Offer Filtering Rules · Concept B",
                 "Add or remove minimum payment, estimated A$/hour, and estimated A$/km conditions. Choose ANY (OR) or ALL (AND).");
-        rulesSummary=text(OfferRuleEngine.summary(Prefs.rules(prefs)),14,ACCENT,true);
+        rulesSummary=text(Prefs.ruleSummary(prefs),14,ACCENT,true);
         settings.addView(rulesSummary,lp(-2,12));
         button(settings,"Open Rules Builder  →",true,
                 v -> startActivity(new Intent(this,OfferRulesActivity.class)));
@@ -211,14 +211,14 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.6",
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.8",
                 "Approved compact black pill, upper-right of Uber Driver. Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.6",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.8",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -350,7 +350,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.9.6\n"+
+            String report="Offer Guardian v0.9.8\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {
@@ -368,13 +368,19 @@ public final class MainActivity extends Activity {
     }
 
     private void testExamples() {
-        OfferRuleEngine.Config c=Prefs.rules(prefs);
-        OfferRuleEngine.Decision a=OfferRuleEngine.evaluate(c,20,27,5000);
-        OfferRuleEngine.Decision b=OfferRuleEngine.evaluate(c,35,60,20000);
-        String message="Current rules: "+OfferRuleEngine.summary(c)+"\n\n"+
-                "A$20 / 27 min / 5 km: "+a.outcome+"\n"+
-                "A$35 / 60 min / 20 km: "+b.outcome+"\n\n"+
-                "This preview does not press Uber Driver buttons.";
+        boolean tiered=Prefs.tieredEnabled(prefs);
+        TieredOfferRules tiers=tiered?Prefs.tieredRules(prefs):null;
+        OfferRuleEngine.Config c=tiered?null:Prefs.rules(prefs);
+        OfferRuleEngine.Decision a=tiered?tiers.evaluate(20,27,5000,1):
+                OfferRuleEngine.evaluate(c,20,27,5000);
+        OfferRuleEngine.Decision b=tiered?tiers.evaluate(35,60,20000,2):
+                OfferRuleEngine.evaluate(c,35,60,20000);
+        OfferRuleEngine.Decision d=tiered?tiers.evaluate(50,65,20000,3):null;
+        String message="Current rules: "+Prefs.ruleSummary(prefs)+"\n\n"+
+                "1 delivery: A$20 / 27 min / 5 km: "+a.outcome+"\n"+
+                "2 deliveries: A$35 / 60 min / 20 km: "+b.outcome+"\n"+
+                (tiered?"3 deliveries: A$50 / 65 min / 20 km: "+d.outcome+"\n":"")+
+                "\nThis preview does not press Uber Driver buttons.";
         new AlertDialog.Builder(this).setTitle("Rule simulation")
                 .setMessage(message).setPositiveButton("OK",null).show();
     }
@@ -405,7 +411,7 @@ public final class MainActivity extends Activity {
     }
 
     private void refresh() {
-        if (rulesSummary!=null)rulesSummary.setText(OfferRuleEngine.summary(Prefs.rules(prefs)));
+        if (rulesSummary!=null)rulesSummary.setText(Prefs.ruleSummary(prefs));
         if (accessStatus == null) return;
         boolean access = accessibilityEnabled();
         accessStatus.setText(access ? "✓ Accessibility service ENABLED" : "! Accessibility service NOT ENABLED");

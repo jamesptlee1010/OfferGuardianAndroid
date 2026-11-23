@@ -241,9 +241,16 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     }
     public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
                                         OfferHistoryFilters displayFilters,int limit,int offset) {
+        return list(tab,search,firstIncludedMillis,displayFilters,
+            "HIGHEST".equals(tab)?OfferHistorySort.PAYMENT_HIGH:OfferHistorySort.NEWEST,
+            limit,offset);
+    }
+    public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
+                                        OfferHistoryFilters displayFilters,OfferHistorySort sort,
+                                        int limit,int offset) {
         Filter filter=filter(tab,search,firstIncludedMillis,displayFilters);
         List<String> args=new ArrayList<>(filter.args);
-        String order="HIGHEST".equals(tab) ? "payout_cents DESC, seen_at DESC":"seen_at DESC";
+        String order=(sort==null?OfferHistorySort.NEWEST:sort).orderBy();
         String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes "+
             "FROM offers WHERE "+filter.where+" ORDER BY "+order+" LIMIT ? OFFSET ?";
         args.add(Integer.toString(Math.max(1,Math.min(100,limit))));

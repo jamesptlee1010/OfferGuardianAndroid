@@ -1,17 +1,29 @@
-# Offer Guardian v0.9.6 — host-side test results (22 November 2026)
+# OfferGuardian v0.9.8 — source validation (23 November 2026)
 
-Base ZIP: `OfferGuardian_v0.9.5_AutoDecline_Recovery_Faster_Waze_History_Filters_Source.zip`.
+Base: `OfferGuardian_v0.9.7_History_Sorting_Minimum_Deliveries_Faster_Waze_Source.zip`, copied directly and modified in place. No Android project recreation.
 
-## Completed locally
+## Passed locally
 
-- **19 of 19 available host-side workflow checks passed** when the Java, SQL, grep and static validation steps from `.github/workflows/build-apk.yml` were run against this source tree. Cloud SDK/Gradle setup and APK compilation were not available here.
-- **51 new mandatory delivery-count assertions passed:** single, double, triple, 4+, split OCR badges, missing/incomplete parentheses, ignoring address/item counts, mandatory override of ANY and ALL modes, unknown count safety, full-duration and count-only decisions, and two independent reading confirmation.
-- Existing **47 v0.9.5 safety assertions**, **28 OCR/duration assertions**, **45 advanced History filter assertions**, **32 price/rate engine assertions**, and other existing host-side suites passed.
-- SQLite v1→v2 migration and 9 History SQL filtering scenarios passed. The v0.9.6 count-only extraction uses the existing SQLite schema; rates for `COUNT_ONLY` remain unverified/unknown.
-- All workflow steps continue to require a verified X/card, readable offer identity, the separate Waze checks, and TEST ONLY / auto-decline switch permissions before attempting an X tap.
+- **22 of 22 GitHub workflow host-side checks passed** (`.github/workflows/build-apk.yml` test and structural check steps), run sequentially. Excludes Android SDK/Gradle install, APK compile/badging and artifact upload steps because those Android tools were not installed in the environment.
+- **35 new delivery-specific pure-Java assertions passed:** separate solo/double/triple thresholds, boundary values, no cross-tier leakage, no four-plus automatic decisions, disabled/unknown counts, ANY/ALL logic, max distance, A$/km, and mathematically provable price failure with missing duration OCR.
+- **20 new preferences persistence assertions passed:** upgrade remains on old rules until Save; values copied from old rules as editable defaults; tier thresholds and combination modes saved independently; disabled tier and legacy fallback preserved; explicit restore retains saved tier drafts.
+- **Existing 51 delivery-heading OCR/two-frame assertions passed** (bare Delivery, Delivery (2), Pack & Deliver (3), split OCR, missing/ambiguous header).
+- **Existing 47 low-payout/hour-plus decline tests passed**, including `$5 / 11 min`, `$27.10 / 61 min`, `$29.66 / 67 min` and conservative hour lower bounds.
+- **Existing 28 duration and OCR extraction assertions passed**; 32 pre-existing rules engine cases; 18 Waze scan timing checks; History sorting and filtering Java/SQLite scenarios; SQLite migration test; remaining host-side guards all pass.
+- **OfferRulesActivity and Prefs Java compile checked with local Android API stubs** (syntax and method/type wiring). Stubs are test-only, not bundled with APK application code.
+- **Source version**: Gradle versionName `0.9.8`, versionCode `17`; workflow and debug APK artifact names updated.
 
-## Still requires verification
+## Safety choices
 
-- **Android SDK/Gradle compilation** (`:app:assembleDebug`) on GitHub Actions. Neither Android SDK nor Gradle was available locally, so no APK is included in this package.
-- **Nubia Focus 5G real-device OCR and accessibility gestures** for bare single delivery badges, `Delivery (2)`, `Pack & Deliver (3)`, split OCR, Waze overlay, daytime and night mode. Synthetic tests do not guarantee that every actual Uber layout is read accurately.
-- No gesture success should be interpreted as a confirmed Uber rejection; diagnostics distinguish dispatched actions from confirmed outcomes.
+- Upgrade does NOT turn tiered rules on until user presses Save all three delivery rule sets. Existing global rules retained and explicitly restorable.
+- Selected count must match confirmed green offer heading. Two stable matching images are needed before declining, including price-only fast path. Waze also retains surface verification, with TEST ONLY/auto-decline controls respected.
+- Unknown count, disabled tier, 4+ deliveries or ambiguous metrics -> no automatic tap.
+- Pure payout failures can be decided without reading duration only if price is the sole condition (OR) or a failed mandatory condition in ALL. A verified count/payout-only decline has Unknown hourly rate in History, not a guessed rate.
+- Changing rules invalidates cached readings/decisions to prevent use of old thresholds on a still-visible offer.
+
+## Not verified here
+
+- Full Android SDK/Gradle `:app:assembleDebug` compilation, APK signing and install on an Android phone.
+- Device display layout, real Uber/Waze OCR accuracy, screenshot timing, decline gestures, TEST ONLY output, and preservation of installed phone settings/history under differing APK signatures.
+
+**Before any uninstall, export Offer History to CSV.** Test all three delivery categories in TEST ONLY before enabling automatic declines.

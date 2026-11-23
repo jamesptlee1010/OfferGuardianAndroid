@@ -123,6 +123,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private boolean autoDeclineSent=false;
     private boolean confirmedHourBound=false;
     private boolean confirmedCountDecline=false;
+    private long lastRulesGeneration=-1;
     private int confirmedLowerHours=0;
     private final OfferAcceptanceEvidence.StableConfirmation acceptanceEvidence=
             new OfferAcceptanceEvidence.StableConfirmation();
@@ -403,7 +404,43 @@ public final class OfferAccessibilityService extends AccessibilityService {
         // different offer with the same price and X location from bypassing
         // the first/second-frame verification requirement.
         OfferDetailsParser.Details parsed=OfferDetailsParser.parse(visual.y,lines);
-        OfferRuleEngine.Config activeRules=Prefs.rules(prefs);
+        long generation=prefs.getLong(Prefs.TIERED_GENERATION,0);
+        if(lastRulesGeneration>=0 && lastRulesGeneration!=generation) {
+            // A save during an active offer must invalidate the old category
+            // verdict; never re-use a cached SHOW or DECLINE from old settings.
+            clearReadVerification();hideOverlay();lastHistoryId=-1;
+            lastOutcome=null;lastAmount=Double.NaN;autoDeclineSent=false;
+            cachedMinutes=0;cachedMetres=0;cachedDeliveryCount=0;
+            cachedPickup="";cachedDestination="";
+            confirmedHourBound=false;confirmedCountDecline=false;
+        }
+        lastRulesGeneration=generation;
+        boolean tieredMode=Prefs.tieredEnabled(prefs);
+        TieredOfferRules tierRules=tieredMode?Prefs.tieredRules(prefs):null;
+        // Selecting the category precedes every payout/rate decision. Never
+        // infer an absent count as a solo, or let global minimum deliveries
+        // override a tiered solo offer.
+        if(tieredMode) {
+            if(parsed.deliveryCount<=0) {
+                hideOverlay();readVerifier.reset();countVerifier.reset();
+                requestFastRetry(visual);
+                status("Tiered rules: delivery count unreadable, retrying. No decline/tap. "+retryStatus());
+                return;
+            }
+            if(parsed.deliveryCount>3 || !tierRules.enabled(parsed.deliveryCount)) {
+                hideOverlay();clearReadVerification();
+                status("Tiered rules: "+tierRules.evaluate(payout,parsed.minutes,parsed.metres,
+                        parsed.deliveryCount).reason+". No tap. "+timing);
+                return;
+            }
+            if(!tierRules.valid()) {
+                hideOverlay();clearReadVerification();
+                status("Tiered rules invalid; manual review, no tap.");return;
+            }
+        }
+        OfferRuleEngine.Config activeRules=tieredMode?
+                tierRules.configFor(parsed.deliveryCount):Prefs.rules(prefs);
+        boolean countRequired=tieredMode || activeRules.deliveriesOn;
         boolean sameOffer=lastHistoryId>0 && !Double.isNaN(lastAmount) &&
                 Math.abs(lastAmount-payout)<.005 &&
                 now-lastDecisionAt<REPEAT_GUARD_MS &&
@@ -411,12 +448,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 cachedPickup.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+"," ").trim()
                     .equals(parsed.pickup.toLowerCase(Locale.ROOT)
                             .replaceAll("[^a-z0-9]+"," ").trim()) &&
-                (!activeRules.deliveriesOn || cachedDeliveryCount==parsed.deliveryCount);
+                (!countRequired || cachedDeliveryCount==parsed.deliveryCount);
         int minutes=parsed.minutes, metres=parsed.metres;
         // A count restriction is an independent mandatory gate, so it can
         // establish a rejection even if journey duration is partially unreadable.
         // But a NEW offer requires two fresh matching card/header observations.
-        if(activeRules.deliveriesOn) {
+        if(!tieredMode && activeRules.deliveriesOn) {
             if(parsed.deliveryCount<=0) {
                 countVerifier.reset();hideOverlay();requestFastRetry(visual);
                 status("Delivery-count rule active but header unreadable; manual review, no tap. "+retryStatus());
@@ -433,13 +470,28 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 return;
             }
         }
+        // A price-only tier (or an AND tier with a failed minimum price) can
+        // conclusively fail even when duration OCR is absent. Verify the payout,
+        // count, merchant and X on two fresh frames, then use the same guarded
+        // gesture path; never pretend the missing hourly rate is known.
+        if(tieredMode && tierRules.provenPriceFailure(parsed.deliveryCount,payout)) {
+            hideOverlay();readVerifier.reset();hourBoundVerifier.reset();correctionVerifier.reset();
+            if(sameOffer && confirmedCountDecline && lastOutcome==OfferRuleEngine.Outcome.DECLINE) {
+                if(!autoDeclineSent)performDecline(payout,parsed,visual,lines,width,height,now,
+                        timing+" | confirmed "+parsed.deliveryCount+"-delivery payout failure");
+                return;
+            }
+            processTierPriceDecline(prefs,payout,parsed,a,visual,lines,width,height,now,
+                    timing,activeRules.minPrice);
+            return;
+        }
         countVerifier.reset();
         boolean metricsWereCorrected=false;
         if(!sameOffer) {
-            OfferReadVerifier.Result verified=readVerifier.observe(payout,parsed,visual.x,visual.y,now,activeRules.deliveriesOn);
+            OfferReadVerifier.Result verified=readVerifier.observe(payout,parsed,visual.x,visual.y,now,countRequired);
             if(verified.state!=OfferReadVerifier.State.CONFIRMED) {
                 hideOverlay();
-                OfferRuleEngine.Decision bounded=OfferSafeDecline.evaluate(Prefs.rules(prefs),payout,parsed);
+                OfferRuleEngine.Decision bounded=OfferSafeDecline.evaluate(activeRules,payout,parsed);
                 if(bounded.outcome==OfferRuleEngine.Outcome.DECLINE) {
                     processBoundedDecline(prefs,payout,parsed,a,visual,lines,width,height,now,timing,bounded);
                     return;
@@ -477,7 +529,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             if(confirmedHourBound && cachedMinutes<=0 &&
                     parsed.parsedHours==confirmedLowerHours &&
                     parsed.metres==cachedMetres &&
-                    OfferSafeDecline.evaluate(Prefs.rules(prefs),payout,parsed).outcome==
+                    OfferSafeDecline.evaluate(activeRules,payout,parsed).outcome==
                             OfferRuleEngine.Outcome.DECLINE) {
                 // A two-frame hour-bound decline was already proven, but Waze's
                 // independent card verification might need one more fresh frame.
@@ -596,6 +648,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
         prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
                 .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
         OfferRuleEngine.Decision decision=OfferRuleEngine.evaluate(activeRules,payout,minutes,metres,parsed.deliveryCount);
+        if(tieredMode)decision=new OfferRuleEngine.Decision(decision.outcome,
+                parsed.deliveryCount+"-delivery tier: "+decision.reason,
+                decision.payout,decision.hourly,decision.perKm);
         String rates=String.format(Locale.US," (time: %s; distance: %s; A$/hr: %s; A$/km: %s)",
                 minutes>0?minutes+" min":"unknown",
                 metres>0?String.format(Locale.US,"%.1f km",metres/1000.0):"unknown",
@@ -701,13 +756,58 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 timing+" | mandatory delivery count "+parsed.deliveryCount);
     }
 
+    /** A verified independent payout failure does not require duration OCR.
+     * Unknown hourly rates are intentionally stored as COUNT_ONLY, never
+     * misrepresented as verified. Waze retains its second surface check. */
+    private void processTierPriceDecline(SharedPreferences prefs,double payout,
+            OfferDetailsParser.Details parsed,OfferScreenEvaluator.Assessment assessment,
+            VisualDeclineDetector.Match visual,List<OfferScreenEvaluator.Line> lines,
+            int width,int height,long now,String timing,double minPrice) {
+        boolean confirmed=countVerifier.observe(payout,parsed,visual.x,visual.y,now);
+        String reason=parsed.deliveryCount+"-delivery tier: A$"+
+                String.format(Locale.US,"%.2f",payout)+" below minimum A$"+
+                String.format(Locale.US,"%.2f",minPrice);
+        if(!confirmed) {
+            if(isWazeForeground()&&prefs.getBoolean(Prefs.AUTO_DECLINE,false)&&
+                    !prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true))
+                wazeVerifier.observe(payout,visual.x,visual.y,visual.cardTop,
+                        visual.confidence,OfferScreenEvaluator.hasOfferIdentity(visual,lines),
+                        parsed.pickup,now);
+            requestFastRetry(visual);
+            status(reason+"; confirming payout, delivery count, merchant and X on second image. " +
+                    "No tap yet. "+retryStatus());
+            return;
+        }
+        retryBudget.reset();fastRetryPending=false;
+        lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
+        cachedMinutes=0;cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
+        cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
+        lastOutcome=OfferRuleEngine.Outcome.DECLINE;reviewAlerted=false;autoDeclineSent=false;
+        confirmedCountDecline=true;confirmedHourBound=false;confirmedLowerHours=0;
+        try(OfferHistoryStore store=new OfferHistoryStore(this)) {
+            lastHistoryId=store.recordCountRule((int)Math.round(payout*100),parsed,assessment.rawPayout);
+        } catch(Exception e) {
+            lastHistoryId=-1;status("Tier payout verified, but history write failed; no tap: "+
+                    e.getClass().getSimpleName());return;
+        }
+        prefs.edit().putFloat(Prefs.LAST_AMOUNT,(float)payout)
+                .putLong(Prefs.LAST_TIME,System.currentTimeMillis()).apply();
+        if(prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
+            status("TEST ONLY: "+reason+"; declined by rules, no tap. "+timing);return;
+        }
+        if(!prefs.getBoolean(Prefs.AUTO_DECLINE,false)) {
+            status(reason+"; auto-decline OFF, no tap. "+timing);return;
+        }
+        performDecline(payout,parsed,visual,lines,width,height,now,timing+" | "+reason);
+    }
+
     /** A bounded reading is not a known duration: history must show Unknown/hr. */
     private void processBoundedDecline(SharedPreferences prefs,double payout,
             OfferDetailsParser.Details parsed,OfferScreenEvaluator.Assessment assessment,
             VisualDeclineDetector.Match visual,List<OfferScreenEvaluator.Line> lines,
             int width,int height,long now,String timing,OfferRuleEngine.Decision bound) {
         boolean confirmed=hourBoundVerifier.observe(payout,parsed,visual.x,visual.y,now,
-                Prefs.rules(prefs).deliveriesOn);
+                Prefs.tieredEnabled(prefs) || Prefs.rules(prefs).deliveriesOn);
         if(!confirmed) {
             // Waze additionally needs its own two-frame, high-confidence offer identity.
             if(isWazeForeground() && prefs.getBoolean(Prefs.AUTO_DECLINE,false) &&

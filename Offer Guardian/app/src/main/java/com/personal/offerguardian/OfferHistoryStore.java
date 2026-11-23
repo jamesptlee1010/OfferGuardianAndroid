@@ -372,30 +372,55 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         Calendar c=Calendar.getInstance();c.set(Calendar.HOUR_OF_DAY,0);c.set(Calendar.MINUTE,0);
         c.set(Calendar.SECOND,0);c.set(Calendar.MILLISECOND,0);return c.getTimeInMillis();
     }
-    public synchronized String csv() {
-        StringBuilder b=new StringBuilder("Offer time,Estimated payout AUD,Type,Delivery count,Pickup,Destination shown,Estimated minutes,Estimated km,Estimated AUD per km,Estimated AUD per hour,Outcome,Automation action,Raw payout OCR,Raw duration OCR,Raw distance OCR,Extraction status,Extraction note,Verified frames,Parsed hours,Parsed minute component\r\n");
-        for(Item v:allRowsForExport()) {
-            String when=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.getDefault()).format(new Date(v.seenAt));
-            append(b,when);append(b,String.format(Locale.US,"%.2f",v.cents/100.0));
-            append(b,v.type);append(b,v.deliveryCount>0?Integer.toString(v.deliveryCount):"UNKNOWN");append(b,v.pickup);append(b,v.destination);
-            append(b,v.minutes==0?"":Integer.toString(v.minutes));
-            append(b,v.metres==0?"":String.format(Locale.US,"%.1f",v.metres/1000.0));
-            append(b,v.trustworthyRates()?OfferRate.dollarsPerKm(v.cents,v.metres):"UNVERIFIED");
-            append(b,v.trustworthyRates()?OfferRate.dollarsPerHour(v.cents,v.minutes):"UNVERIFIED");
-            append(b,v.outcome);append(b,v.action);
-            append(b,v.rawPayout);append(b,v.rawDuration);append(b,v.rawDistance);
-            append(b,v.extractionStatus);append(b,v.extractionNote);
-            append(b,Integer.toString(v.verifiedFrames));
-            append(b,Integer.toString(v.parsedHours));
-            append(b,Integer.toString(v.parsedMinutes));
-            b.append("\r\n");
-        }return b.toString();
+    private static final String EXPORT_COLUMNS="id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes,delivery_count";
+    public synchronized void writeCsv(java.io.Writer writer) throws java.io.IOException {
+        writer.write("Offer time,Estimated payout AUD,Type,Delivery count,Pickup,Destination shown,Estimated minutes,Estimated km,Estimated AUD per km,Estimated AUD per hour,Outcome,Automation action,Raw payout OCR,Raw duration OCR,Raw distance OCR,Extraction status,Extraction note,Verified frames,Parsed hours,Parsed minute component,Offer time epoch ms,Distance metres exact\r\n");
+        SimpleDateFormat format=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US);
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT "+EXPORT_COLUMNS+" FROM offers ORDER BY seen_at DESC",null)) {
+            while(c.moveToNext()) {
+                Item v=parse(c);StringBuilder b=new StringBuilder();
+                append(b,format.format(new Date(v.seenAt)));append(b,String.format(Locale.US,"%.2f",v.cents/100.0));
+                append(b,v.type);append(b,v.deliveryCount>0?Integer.toString(v.deliveryCount):"UNKNOWN");append(b,v.pickup);append(b,v.destination);
+                append(b,v.minutes==0?"":Integer.toString(v.minutes));append(b,v.metres==0?"":String.format(Locale.US,"%.1f",v.metres/1000.0));
+                append(b,v.trustworthyRates()?OfferRate.dollarsPerKm(v.cents,v.metres):"UNVERIFIED");append(b,v.trustworthyRates()?OfferRate.dollarsPerHour(v.cents,v.minutes):"UNVERIFIED");
+                append(b,v.outcome);append(b,v.action);append(b,v.rawPayout);append(b,v.rawDuration);append(b,v.rawDistance);append(b,v.extractionStatus);append(b,v.extractionNote);
+                append(b,Integer.toString(v.verifiedFrames));append(b,Integer.toString(v.parsedHours));append(b,Integer.toString(v.parsedMinutes));
+                append(b,Long.toString(v.seenAt));append(b,Integer.toString(v.metres));b.append("\r\n");writer.write(b.toString());
+            }
+        }
     }
-    private List<Item> allRowsForExport() {
-        List<Item> out=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes,delivery_count FROM offers ORDER BY seen_at DESC",null)) {
-            while(c.moveToNext())out.add(parse(c));
-        }return out;
+    public static final class ImportResult {public int added,duplicates;}
+    public synchronized ImportResult importCsv(java.io.Reader reader) throws Exception {
+        java.io.PushbackReader in=new java.io.PushbackReader(new java.io.BufferedReader(reader),1);
+        List<String> header=OfferBackupCsv.readRow(in);
+        if(header==null||header.isEmpty())throw new java.io.IOException("Empty backup");
+        header.set(0,header.get(0).replace("\uFEFF",""));
+        if(!header.contains("Offer time")||!header.contains("Estimated payout AUD")||!header.contains("Type"))throw new java.io.IOException("Not an Offer Guardian history CSV");
+        SQLiteDatabase db=getWritableDatabase();ImportResult result=new ImportResult();db.beginTransaction();
+        try {
+            List<String> row;while((row=OfferBackupCsv.readRow(in))!=null){
+                if(row.size()==1&&row.get(0).isEmpty())continue;
+                java.util.Map<String,String> m=OfferBackupCsv.map(header,row);
+                long seen=OfferBackupCsv.timestamp(m);int cents=OfferBackupCsv.scaled(OfferBackupCsv.value(m,"Estimated payout AUD",""),100);
+                int metres=OfferBackupCsv.integer(m,"Distance metres exact",-1);if(metres<0)metres=OfferBackupCsv.scaled(OfferBackupCsv.value(m,"Estimated km",""),1000);
+                int minutes=OfferBackupCsv.integer(m,"Estimated minutes",0),count=OfferBackupCsv.integer(m,"Delivery count",0);
+                if(seen<=0||cents<=0||metres<0||minutes<0||count<0||count>12)throw new java.io.IOException("Invalid offer data");
+                String type=OfferBackupCsv.original(OfferBackupCsv.value(m,"Type","Delivery")),pickup=OfferBackupCsv.original(OfferBackupCsv.value(m,"Pickup","")),dest=OfferBackupCsv.original(OfferBackupCsv.value(m,"Destination shown",""));
+                if(!m.containsKey("Delivery count"))for(int n=1;n<=3;n++)if(type.equals("Delivery ("+n+")")||type.equals("Pack & Deliver ("+n+")")||OfferBackupCsv.value(m,"Extraction note", "").contains("confirm "+n+" deliveries."))count=n;
+                // Legacy exports have only second precision. Match the same timestamp second + payout and identity, not the row ID.
+                long first=m.containsKey("Offer time epoch ms")?seen:(seen/1000)*1000;
+                long last=m.containsKey("Offer time epoch ms")?seen:first+999;
+                try(Cursor dup=db.rawQuery("SELECT id FROM offers WHERE (seen_at BETWEEN ? AND ? OR seen_at=?) AND payout_cents=? AND type=? AND pickup=? AND destination=? LIMIT 1",new String[]{Long.toString(first),Long.toString(last),Long.toString((seen/1000)*1000),Integer.toString(cents),type,pickup,dest})){
+                    if(dup.moveToFirst()){result.duplicates++;continue;}
+                }
+                ContentValues v=new ContentValues();v.put("seen_at",seen);v.put("payout_cents",cents);v.put("type",type);v.put("pickup",pickup);v.put("destination",dest);v.put("minutes",minutes);v.put("metres",metres);v.put("delivery_count",count);
+                String outcome=OfferBackupCsv.value(m,"Outcome",UNKNOWN);if(!java.util.Arrays.asList(UNKNOWN,ACCEPTED,DECLINED,EXPIRED).contains(outcome))throw new java.io.IOException("Invalid outcome");v.put("outcome",outcome);
+                String[] keys={"action","raw_payout","raw_duration","raw_distance","extraction_status","extraction_note"};String[] names={"Automation action","Raw payout OCR","Raw duration OCR","Raw distance OCR","Extraction status","Extraction note"};String[] defaults={"NONE","","","","LEGACY_UNVERIFIED",""};
+                for(int i=0;i<keys.length;i++)v.put(keys[i],OfferBackupCsv.original(OfferBackupCsv.value(m,names[i],defaults[i])));
+                v.put("verified_frames",OfferBackupCsv.integer(m,"Verified frames",0));v.put("parsed_hours",OfferBackupCsv.integer(m,"Parsed hours",0));v.put("parsed_minutes",OfferBackupCsv.integer(m,"Parsed minute component",0));
+                db.insertOrThrow(TABLE,null,v);result.added++;
+            }db.setTransactionSuccessful();return result;
+        }finally{db.endTransaction();}
     }
     private static void append(StringBuilder out,String cell) {
         if(out.length()>0 && out.charAt(out.length()-1)!= '\n')out.append(',');

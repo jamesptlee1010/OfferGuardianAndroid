@@ -1,16 +1,11 @@
-# OfferGuardian v0.9.9 — GitHub APK Build Guide
+# Offer Guardian v0.9.12 — GitHub APK build
 
-1. Extract `OfferGuardian_v0.9.9_Time_Filter_Faster_Price_Hourly_Source.zip`.
-2. Upload the **extracted files**, preserving folders, to the **root** of your GitHub repository. The web uploader does not extract ZIP files. `.github/workflows/build-apk.yml` must remain in that exact folder.
-3. Remove old nested copies and obsolete workflows so GitHub selects the current source. Check `app/build.gradle` has `versionName '0.9.9'` and `versionCode 18`.
-4. Open **Actions → Build Offer Guardian APK → Run workflow** (or allow push-triggered build).
-5. Once the action finishes green, download the `OfferGuardian-v0.9.9-installable-APK` artifact and install `OfferGuardian-v0.9.9-debug.apk` inside it.
+1. Export your existing Offer History to CSV on your phone. Save it in Downloads or another location outside app storage.
+2. Extract the v0.9.12 source ZIP and upload the extracted contents to the root of your existing GitHub repository, preserving folder structure and replacing existing files. Keep `.github/workflows/build-apk.yml` in its exact location. Remove obsolete nested builds.
+3. Check `app/build.gradle` says `versionName '0.9.12'` and `versionCode 20`.
+4. Run **Actions → Build Offer Guardian APK → Run workflow**. The workflow runs regression tests, configures Java 17 / Android SDK 35 / Gradle 8.9 and compiles the APK.
+5. Download `OfferGuardian-v0.9.12-installable-APK` when the action is green. Install its `OfferGuardian-v0.9.12-debug.apk`. If debug signing differs, an uninstall may be necessary; keep the CSV backup first.
+6. If needed, open Offer History → Import CSV and select your backup. Check the imported counts and outcomes. Settings are not in the history CSV.
+7. Performance settings → Low Resource Mode is on by default. Keep TEST ONLY enabled and verify that Uber Driver offers are reliably detected before enabling automated decline. Switch Low Resource Mode off to restore Waze monitoring.
 
-The workflow runs host-side regression checks, sets up Java 17, Android SDK 35 and Gradle 8.9, compiles the APK, checks its version, and publishes an installable artifact. No APK has been compiled locally.
-
-**Before uninstalling any previous version, export Offer History to CSV.** Debug builds may have different signing certificates and might require uninstalling, which erases local settings/history.
-
-After installation, check your three delivery-specific payout/hourly settings. In History, open **Filters** and use the optional **Time of day** section. Start with TEST ONLY before enabling automatic declines, especially when Waze is foreground.
-
-## v0.9.11
-This ZIP includes the full source tree (not an APK). Upload the **extracted files** to your GitHub repository, preserving `.github/workflows/build-apk.yml`, then run the Build Offer Guardian APK workflow. Do not upload the ZIP as a single GitHub repository file. Update your existing source files rather than nesting a second project inside the repository.
+This archive is source code, not a compiled APK. No Android SDK is available in the preparation environment, so Android build and real-device performance remain unverified.

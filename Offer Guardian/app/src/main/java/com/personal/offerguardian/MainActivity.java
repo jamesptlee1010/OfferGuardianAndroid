@@ -49,6 +49,7 @@ public final class MainActivity extends Activity {
     private TextView accessStatus, lastStatus, historyStatus;
     private Switch monitorSwitch, autoSwitch, alertSwitch, visualSwitch, visualTestSwitch;
     private TextView rulesSummary;
+    private TextView performanceStatus;
     private TextView alertVolumeLabel;
 
     @Override public void onCreate(Bundle state) {
@@ -170,14 +171,14 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.9.11  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v0.9.12  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
                 v -> startActivity(new Intent(this,OfferHistoryActivity.class)));
 
         LinearLayout contexts=card(root,"Screen recognition · automatic",
-                "Detects light and dark offer cards automatically in Uber Driver or over Waze. No manual mode selection. When Waze is foreground, an auto-decline requires two consistent fast-confirmed screenshots and verified Uber offer text; otherwise it leaves the screen untouched. Open diagnostics to see why an offer was skipped.");
+                "Detects light and dark offer cards automatically. Low Resource Mode limits monitoring to Uber Driver; switch it off for Waze. When Waze is foreground, an auto-decline requires two consistent fast-confirmed screenshots and verified Uber offer text; otherwise it leaves the screen untouched. Open diagnostics to see why an offer was skipped.");
 
         LinearLayout settings = card(root, "Offer Filtering Rules · Concept B",
                 "Set separate payment and estimated A$/hour minimums for 1, 2 and 3 deliveries. Distance does not affect automatic decisions. Choose ANY (OR) or ALL (AND).");
@@ -185,7 +186,7 @@ public final class MainActivity extends Activity {
         settings.addView(rulesSummary,lp(-2,12));
         button(settings,"Open Rules Builder  →",true,
                 v -> startActivity(new Intent(this,OfferRulesActivity.class)));
-        monitorSwitch = toggle(settings, "Monitor offers in Uber Driver and Waze", prefs.getBoolean(Prefs.MONITOR, false));
+        monitorSwitch = toggle(settings, "Monitor offers in selected apps", prefs.getBoolean(Prefs.MONITOR, false));
         autoSwitch = toggle(settings, "Auto-decline offers failing your selected rules", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
         alertSwitch = toggle(settings, "Sound alert for qualifying or uncertain offers", prefs.getBoolean(Prefs.ALERT, true));
         monitorSwitch.setOnCheckedChangeListener((button, checked) -> {
@@ -211,14 +212,20 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.11",
+        LinearLayout performance=card(root,"Performance settings","Low Resource Mode is the default. Uber Driver only; fewer idle screenshots and diagnostic writes. Waze monitoring is available when this is off. Offer verification rules stay unchanged.");
+        Switch low=toggle(performance,"Low Resource Mode · Uber Driver only",prefs.getBoolean(Prefs.LOW_RESOURCE,true));
+        low.setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.LOW_RESOURCE,on).apply());
+        performanceStatus=text("Tap to measure this app only. No continuous diagnostic polling.",13,MUTED,false);
+        performance.addView(performanceStatus,lp(-2,8));
+        button(performance,"Sample app memory and CPU",false,v->performanceStatus.setText(AppPerformance.sample()));
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.12",
                 "Approved compact black pill, upper-right of Uber Driver. Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.11",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.12",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -350,7 +357,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.9.11\n"+
+            String report="Offer Guardian v0.9.12\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {

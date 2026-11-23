@@ -12,6 +12,7 @@ public final class OfferSurfacePolicy {
         return Host.OTHER;
     }
     public static boolean shouldScan(Host host) {return host!=Host.OTHER;}
+    public static boolean shouldScan(Host host,boolean lowResource) {return host==Host.UBER || (!lowResource && host==Host.WAZE);}
     /** More rigorous safeguards for sending a gesture while a navigation app is on screen. */
     public static boolean allowDecline(Host host,boolean cardVerified,
                                        boolean offerTextVerified,int stableFrames,

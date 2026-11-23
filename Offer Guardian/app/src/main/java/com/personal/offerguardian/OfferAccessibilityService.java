@@ -1,6 +1,7 @@
 package com.personal.offerguardian;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.accessibilityservice.GestureDescription;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -50,6 +51,25 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private static final long WAZE_CONFIRM_MIN_CAPTURE_MS=430;
     private static final long REPEAT_GUARD_MS = 90000;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private static final long IDLE_POLL_MS=3200;
+    private static final long OUTSIDE_POLL_MS=4000;
+    private boolean lowResource=true, serviceActive=false, offerVisible=false;
+    private long lastEventHint=0, outsideSince=0;
+    private final Runnable hintedScan=this::scanIfDue;
+    private SharedPreferences settings;
+    private final SharedPreferences.OnSharedPreferenceChangeListener modeListener=(p,key)->{
+        if(Prefs.LOW_RESOURCE.equals(key)||Prefs.MONITOR.equals(key)||Prefs.VISUAL_X.equals(key)) {
+            handler.post(this::refreshMode);
+        }
+    };
+    private void refreshMode() {if(!serviceActive)return;applyMode();handler.removeCallbacks(monitorLoop);handler.post(monitorLoop);}
+    private void applyMode() {
+        lowResource=settings.getBoolean(Prefs.LOW_RESOURCE,true);
+        AccessibilityServiceInfo info=getServiceInfo();
+        if(info!=null) {info.packageNames=lowResource?new String[]{UBER}:new String[]{UBER,WAZE};setServiceInfo(info);}
+        if(!monitoring()||(lowResource&&!isUberForeground())) {handler.removeCallbacks(hintedScan);hideOverlay();clearPendingAcceptance();clearReadVerification();offerVisible=false;}
+    }
+    private boolean monitoring() {return serviceActive && settings!=null && settings.getBoolean(Prefs.MONITOR,false) && settings.getBoolean(Prefs.VISUAL_X,false) && !settings.getBoolean(Prefs.LEARNING,false);}
     private final Runnable monitorLoop = new Runnable() {
         @Override public void run() {
             try {
@@ -60,17 +80,20 @@ public final class OfferAccessibilityService extends AccessibilityService {
                         hideOverlay();clearPendingAcceptance();clearReadVerification();
                         status("Visual recognition is OFF. Turn on grey-X recognition in the app.");
                     } else if (isSupportedForeground()) {
-                        scanIfDue();
+                        outsideSince=0;scanIfDue();
                     } else {
-                        hideOverlay();clearPendingAcceptance();clearReadVerification();
+                        hideOverlay();clearPendingAcceptance();clearReadVerification();offerVisible=false;
+                        if(outsideSince==0)outsideSince=SystemClock.elapsedRealtime();
+                        if(lowResource&&!capturing&&recognizer!=null&&SystemClock.elapsedRealtime()-outsideSince>=20000){recognizer.close();recognizer=null;}
                     }
                 } else {
-                    hideOverlay();clearPendingAcceptance();clearReadVerification();
+                    hideOverlay();clearPendingAcceptance();clearReadVerification();offerVisible=false;
+                    if(lowResource&&!capturing&&recognizer!=null){recognizer.close();recognizer=null;}
                 }
             } catch (Exception e) {
                 status("Monitor error: " + e.getClass().getSimpleName());
             } finally {
-                handler.postDelayed(this, isWazeForeground() ? WAZE_POLL_MS : UBER_POLL_MS);
+                if(serviceActive && monitoring()) handler.postDelayed(this, lowResource ? (isUberForeground() ? UBER_POLL_MS : OUTSIDE_POLL_MS) : (isWazeForeground() ? WAZE_POLL_MS : UBER_POLL_MS));
             }
         }
     };
@@ -180,7 +203,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
-        status("Accessibility connected. Auto day/night recognition for Uber and Waze is active.");
+        settings=Prefs.of(this);serviceActive=true;settings.registerOnSharedPreferenceChangeListener(modeListener);applyMode();
+        status("Accessibility connected. "+(lowResource?"Low Resource Mode (Uber only).":"Uber and Waze mode."));
         handler.removeCallbacks(monitorLoop);
         handler.post(monitorLoop);
     }
@@ -189,12 +213,21 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(event==null)return;
         OfferSurfacePolicy.Host host=OfferSurfacePolicy.classify(
                 event.getPackageName()==null?null:event.getPackageName().toString());
-        if(!OfferSurfacePolicy.shouldScan(host)) {
+        if(!OfferSurfacePolicy.shouldScan(host,lowResource)) {
             if(!isSupportedForeground())hideOverlay();
             return;
         }
-        if(!Prefs.of(this).getBoolean(Prefs.MONITOR,false)||
-                !Prefs.of(this).getBoolean(Prefs.VISUAL_X,false))return;
+        if(!monitoring())return;
+        if(lowResource) {
+            // Navigation redraws are not offers. Only explicit window/offer hints accelerate the fallback scan.
+            String hint=event.getText().toString().toLowerCase(Locale.ROOT);
+            boolean likely=event.getEventType()==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || hint.contains("delivery (") || hint.contains("pack & deliver") || hint.contains("accept") || hint.contains("match") || hint.contains("a$");
+            if(!likely)return;
+            lastEventHint=SystemClock.elapsedRealtime();
+            if(lastEventHint-lastCaptureAt<UBER_MIN_CAPTURE_MS&&!capturing) {
+                handler.removeCallbacks(hintedScan);handler.postDelayed(hintedScan,Math.max(1,UBER_MIN_CAPTURE_MS-(lastEventHint-lastCaptureAt)+10));
+            }
+        }
         // Waze's navigation updates may not fire Uber events, so the periodic
         // screenshot poll remains the primary detection path.
         if(isSupportedForeground())scanIfDue();
@@ -202,11 +235,11 @@ public final class OfferAccessibilityService extends AccessibilityService {
 
     private OfferSurfacePolicy.Host foregroundHost() {
         AccessibilityNodeInfo root=getRootInActiveWindow();
-        if(root==null||root.getPackageName()==null)return OfferSurfacePolicy.Host.OTHER;
-        return OfferSurfacePolicy.classify(root.getPackageName().toString());
+        if(root==null)return OfferSurfacePolicy.Host.OTHER;
+        try {return OfferSurfacePolicy.classify(root.getPackageName()==null?null:root.getPackageName().toString());} finally {root.recycle();}
     }
     private boolean isSupportedForeground() {
-        return OfferSurfacePolicy.shouldScan(foregroundHost());
+        return monitoring() && OfferSurfacePolicy.shouldScan(foregroundHost(),settings.getBoolean(Prefs.LOW_RESOURCE,true));
     }
     private boolean isUberForeground() {
         return foregroundHost()==OfferSurfacePolicy.Host.UBER;
@@ -216,20 +249,24 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
 
     private void scanIfDue() {
+        if(!isSupportedForeground())return;
+        android.os.PowerManager power=(android.os.PowerManager)getSystemService(POWER_SERVICE);
+        if(power!=null&&!power.isInteractive())return;
         if (Build.VERSION.SDK_INT<30) {
             status("Android 11+ required for screen screenshots.");return;
         }
         long now=SystemClock.elapsedRealtime();
         boolean confirmationPending=readVerifier.isPending()||correctionVerifier.isPending()||
-                hourBoundVerifier.isPending()||fastRetryPending||
+                hourBoundVerifier.isPending()||countVerifier.isPending()||fastRetryPending||
                 (isWazeForeground()&&wazeVerifier.isPending());
         long minInterval=confirmationPending?WAZE_CONFIRM_MIN_CAPTURE_MS:
-                (isWazeForeground()?WAZE_MIN_CAPTURE_MS:UBER_MIN_CAPTURE_MS);
+                (isWazeForeground()?WAZE_MIN_CAPTURE_MS:(lowResource&&!offerVisible&&pendingAcceptanceId<=0&&(lastEventHint==0||now-lastEventHint>1800)?IDLE_POLL_MS:UBER_MIN_CAPTURE_MS));
         if(capturing || now-lastCaptureAt<minInterval)return;
         fastRetryPending=false;
         lastCaptureAt=now;
         scanStartMs=now;
         capturing=true;
+        AppPerformance.scan();
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY,getMainExecutor(),new TakeScreenshotCallback() {
                 @Override public void onFailure(int errorCode) {
@@ -250,7 +287,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     Bitmap copy=null;
                     try {
                         Bitmap buffer=Bitmap.wrapHardwareBuffer(hardware,result.getColorSpace());
-                        if (buffer!=null) copy=buffer.copy(Bitmap.Config.ARGB_8888,false);
+                        if (buffer!=null) {try {copy=buffer.copy(Bitmap.Config.ARGB_8888,false);} finally {buffer.recycle();}}
                     } catch (Exception e) {
                         status("Could not read screenshot: "+e.getClass().getSimpleName());
                     } finally {hardware.close();}
@@ -304,6 +341,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT,
                     template,darkTemplate,41,41);
             final long visualReady=SystemClock.elapsedRealtime();
+            offerVisible=visual.found;
             if(!visual.found) {
                 hideOverlay();clearReadVerification();
                 ++noOfferFrames;
@@ -359,6 +397,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 .addOnCompleteListener(task -> {
                     if(ocrImage!=frame)ocrImage.recycle();
                     frame.recycle();capturing=false;
+                    if(!monitoring()&&lowResource&&recognizer!=null){recognizer.close();recognizer=null;}
                     if(wazeVerifier.isPending() || readVerifier.isPending() ||
                     correctionVerifier.isPending() || hourBoundVerifier.isPending() ||
                 countVerifier.isPending() ||
@@ -943,6 +982,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         SharedPreferences p=Prefs.of(this);
         String old=p.getString(Prefs.LIVE_STATUS,"");
         long time=System.currentTimeMillis();
+        if(lowResource && msg.equals(old))return;
         SharedPreferences.Editor edit=p.edit().putString(Prefs.LIVE_STATUS,msg)
                 .putLong(Prefs.LIVE_TIME,time);
         if(!msg.equals(old)) {
@@ -963,7 +1003,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
         status("Accessibility interrupted. Monitoring paused.");
     }
     @Override public void onDestroy() {
-        handler.removeCallbacks(monitorLoop);
+        serviceActive=false;
+        if(settings!=null)settings.unregisterOnSharedPreferenceChangeListener(modeListener);
+        handler.removeCallbacks(monitorLoop);handler.removeCallbacks(hintedScan);
         hideOverlay();clearPendingAcceptance();clearReadVerification();
         if(recognizer!=null) recognizer.close();
         status("Accessibility service stopped. Re-enable if monitoring is needed.");

@@ -1,0 +1,9 @@
+# Offer Guardian v0.9.12
+
+- Low Resource Mode defaults to on (Uber Driver only). When off, the existing Uber/Waze scanning and verification path remains available.
+- Low mode narrows accessibility events to Uber Driver, ignores unrelated content changes, reduces idle visual screenshots (minimum interval 3200 ms rather than 1450 ms), and uses offer/window hints to trigger faster scans. Fast confirmation and existing decline verification remain in place. Periodic fallback is necessary because Uber does not reliably expose all offers as accessibility events. First detection of an eventless offer may be slower; compare in TEST ONLY on the device.
+- No screenshots when another app is foreground or the screen is off. No periodic monitoring when disabled. OCR recognizer released after sustained time outside supported foreground (low mode); it is lazily recreated. Repeated identical status writes are suppressed in low mode. Hardware screenshot wrapper is released promptly.
+- Performance settings provides manual process PSS, average CPU use (relative to one core), scan rate, and screenshot request count. No continuous diagnostics sampler. Tap once, run the test, return and tap again.
+- History uses 35-row pages (unlimited navigation), with all-matching summary calculations preserved. Search debounced; initial redundant refresh removed.
+- History Import CSV merges backups, skips matching timestamp/payout/type/pickup/destination records and does not overwrite existing outcomes. Invalid CSV rolls back the import. Legacy exports use local timestamp to second precision and rounded km; current exports include exact epoch milliseconds and metres. Import/export streams in a worker thread, not a whole-file in-memory string. No database schema change.
+- No new location permission; GPS reliability and battery/CPU reductions need real-device verification.

@@ -41,7 +41,12 @@ public final class OfferHistoryActivity extends Activity {
     private static final int MUTED=GRAY;
     private static final int BG=Color.rgb(247,250,247);
     private static final int BORDER=Color.rgb(224,231,226);
-    private static final int REQUEST_CSV=102;
+    private static final int REQUEST_CSV=102, REQUEST_IMPORT=103;
+    private static final int PAGE_SIZE=35;
+    private int pageOffset=0;
+    private boolean backupBusy=false;
+    private final android.os.Handler searchHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable searchRefresh=this::refreshList;
     private OfferHistoryStore store;
     private LinearLayout root,results,tabs,summary,averages,deliveryFilterRow,matchRateRow;
     private EditText search;
@@ -55,7 +60,6 @@ public final class OfferHistoryActivity extends Activity {
     private String selectedTab="ALL";
     private String searchTerm="";
     private String dateRange="TODAY";
-    private int visible=35;
 
     @Override public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
@@ -103,7 +107,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.11",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.12",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -133,7 +137,7 @@ public final class OfferHistoryActivity extends Activity {
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s,int st,int cnt,int aft) {}
             @Override public void onTextChanged(CharSequence s,int start,int before,int count) {
-                searchTerm=s.toString();visible=35;refreshList();
+                searchTerm=s.toString();pageOffset=0;searchHandler.removeCallbacks(searchRefresh);searchHandler.postDelayed(searchRefresh,250);
             }
             @Override public void afterTextChanged(Editable e) {}
         });
@@ -160,12 +164,13 @@ public final class OfferHistoryActivity extends Activity {
         LinearLayout actions=row();root.addView(actions,box(-2,14));
         TextView export=softButton("↓ Export all CSV",v->exportCsv());
         actions.addView(export,new LinearLayout.LayoutParams(0,dp(43),1));
+        TextView restore=softButton("↑ Import CSV",v->importCsv());
+        LinearLayout.LayoutParams restoreLp=new LinearLayout.LayoutParams(0,dp(43),1);restoreLp.leftMargin=dp(8);actions.addView(restore,restoreLp);
         TextView wipe=softButton("Clear history",v->confirmClear());
         LinearLayout.LayoutParams wipeLp=new LinearLayout.LayoutParams(0,dp(43),1);wipeLp.leftMargin=dp(10);
         actions.addView(wipe,wipeLp);
         results=col();root.addView(results,box(-2,8));
         addLine(root,"Payout, kilometres and hourly rates are estimates from Uber’s offer card at request time, not final earnings or actual travel. Accepted/declined outcomes can be marked manually; unconfirmed outcomes remain Unknown. History stays on this phone.",11,GRAY,false,0);
-        refreshList();
     }
     private void tab(String label,String value) {
         TextView t=label(label,14,selectedTab.equals(value)?Color.WHITE:DARK,true);
@@ -177,7 +182,7 @@ public final class OfferHistoryActivity extends Activity {
                 historySort=OfferHistorySort.PAYMENT_HIGH;
                 saveHistorySort();
             }
-            visible=35;
+            pageOffset=0;
             refreshList();
         });
         tabs.addView(t,new LinearLayout.LayoutParams(0,-1,1));
@@ -199,7 +204,7 @@ public final class OfferHistoryActivity extends Activity {
         final String[] codes={"TODAY","7D","30D","ALL"};
         new AlertDialog.Builder(this).setTitle("Offer history period")
             .setSingleChoiceItems(names,dateRangeIndex(),(dialog,index)->{
-                dateRange=codes[index];visible=35;dialog.dismiss();refreshList();
+                dateRange=codes[index];pageOffset=0;dialog.dismiss();refreshList();
             }).setNegativeButton("Cancel",null).show();
     }
     private int dateRangeIndex() {
@@ -266,7 +271,7 @@ public final class OfferHistoryActivity extends Activity {
             .setSingleChoiceItems(names,historySort.ordinal(),(dialog,index)->{
                 historySort=choices[index];
                 saveHistorySort();
-                visible=35;
+                pageOffset=0;
                 dialog.dismiss();
                 refreshList();
             }).setNegativeButton("Cancel",null).show();
@@ -294,7 +299,7 @@ public final class OfferHistoryActivity extends Activity {
             chip.setOnClickListener(v->{
                 deliveryQuickFilter=filter;
                 saveHistoryFilters();
-                visible=35;
+                pageOffset=0;
                 refreshList();
             });
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
@@ -378,7 +383,7 @@ public final class OfferHistoryActivity extends Activity {
             .setView(scroll)
             .setNegativeButton("Cancel",null)
             .setNeutralButton("Clear all",(d,w)->{
-                historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;saveHistoryFilters();visible=35;refreshList();
+                historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;saveHistoryFilters();pageOffset=0;refreshList();
             })
             .setPositiveButton("Apply",null)
             .create();
@@ -390,7 +395,7 @@ public final class OfferHistoryActivity extends Activity {
                 historyFilters=selected;
                 historyTime=new OfferHistoryTimeWindow(useTime.isChecked(),clockTimes[0],clockTimes[1]);
                 saveHistoryFilters();
-                visible=35;refreshList();dialog.dismiss();
+                pageOffset=0;refreshList();dialog.dismiss();
             } catch(IllegalArgumentException error) {
                 Toast.makeText(this,error.getMessage(),Toast.LENGTH_LONG).show();
             }
@@ -402,6 +407,7 @@ public final class OfferHistoryActivity extends Activity {
         if(activeRules!=null)activeRules.setText(Prefs.ruleSummary(Prefs.of(this)));
         final long cutoff=firstIncludedMillis();
         OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters,historyTime,deliveryQuickFilter);
+        if(pageOffset>=s.count())pageOffset=s.count()==0?0:((s.count()-1)/PAGE_SIZE)*PAGE_SIZE;
         int timelineTotal=store.totalInTimeline(cutoff,historyTime);
         boolean criteriaActive=historyFilters.active() || deliveryQuickFilter.active() ||
                 !searchTerm.trim().isEmpty();
@@ -480,7 +486,7 @@ public final class OfferHistoryActivity extends Activity {
         else if("HIGHEST".equals(selectedTab))
             addLine(results,"Ranking: "+historySort.label,13,GRAY,false,9);
         addLine(results,"Averages use every matching offer, including offers below the visible list limit. Hourly and kilometre averages omit offers with missing time or distance.",11,GRAY,false,11);
-        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,historyTime,deliveryQuickFilter,Math.min(100,visible),0);
+        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,historyTime,deliveryQuickFilter,PAGE_SIZE,pageOffset);
         if(offers.isEmpty()) {
             LinearLayout empty=col();empty.setPadding(dp(15),dp(28),dp(15),dp(28));
             empty.setBackground(bg(Color.WHITE,BORDER,14));results.addView(empty,box(-2,8));
@@ -488,17 +494,15 @@ public final class OfferHistoryActivity extends Activity {
             addLine(empty,anyDisplayFilterActive()?"Try a wider delivery-count filter, time window, price/rate range, date period or clear the history filters.":
                 "Open Uber Driver with monitoring enabled. Newly detected offers appear here. If an outcome is unknown, open an offer to mark it.",13,GRAY,false,8);
             if(anyDisplayFilterActive()) {
-                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;saveHistoryFilters();visible=35;refreshList();});
+                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;saveHistoryFilters();pageOffset=0;refreshList();});
                 empty.addView(reset,box(45,0));
             }
             return;
         }
-        int rank=0;
+        int rank=pageOffset;
         for(OfferHistoryStore.Item item:offers)addOffer(item,"HIGHEST".equals(selectedTab)?++rank:0);
-        if(offers.size()>=visible) {
-            TextView more=softButton("Show more offers",v->{visible=Math.min(100,visible+35);refreshList();});
-            results.addView(more,box(45,12));
-        }
+        if(pageOffset>0)results.addView(softButton("Previous 35 offers",v->{pageOffset=Math.max(0,pageOffset-PAGE_SIZE);refreshList();}),box(45,8));
+        if(pageOffset+offers.size()<s.count())results.addView(softButton("Next 35 offers",v->{pageOffset+=PAGE_SIZE;refreshList();}),box(45,12));
     }
     @Override protected void onResume() {
         super.onResume();
@@ -580,13 +584,19 @@ public final class OfferHistoryActivity extends Activity {
             }).setNegativeButton("Cancel",null).show();
     }
     private void confirmClear() {
+        if(backupBusy)return;
         new AlertDialog.Builder(this).setTitle("Delete all offer history?")
             .setMessage("This permanently deletes locally stored offers, including accepted and declined records. Export a CSV first if needed.")
             .setNegativeButton("Cancel",null).setPositiveButton("Delete history",(d,w)->{
-                store.clearAll();refreshList();
+                store.clearAll();pageOffset=0;refreshList();
             }).show();
     }
+    private void importCsv() {
+        if(backupBusy)return;
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("*/*");startActivityForResult(intent,REQUEST_IMPORT);
+    }
     private void exportCsv() {
+        if(backupBusy)return;
         Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.setType("text/csv");intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.putExtra(Intent.EXTRA_TITLE,"OfferGuardian-History-"+
@@ -595,13 +605,27 @@ public final class OfferHistoryActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
-        if(request!=REQUEST_CSV||result!=RESULT_OK||data==null||data.getData()==null)return;
+        if((request!=REQUEST_CSV&&request!=REQUEST_IMPORT)||result!=RESULT_OK||data==null||data.getData()==null||backupBusy)return;
         Uri uri=data.getData();
-        try(OutputStream stream=getContentResolver().openOutputStream(uri)) {
-            if(stream==null)throw new IllegalStateException("Unable to open selected file");
-            stream.write(store.csv().getBytes(StandardCharsets.UTF_8));
-            Toast.makeText(this,"Offer history exported",Toast.LENGTH_SHORT).show();
-        } catch(Exception e) {Toast.makeText(this,"CSV export failed: "+e.getMessage(),Toast.LENGTH_LONG).show();}
+        if(request==REQUEST_IMPORT){new AlertDialog.Builder(this).setTitle("Import offer history?").setMessage("Merge the selected CSV with existing records. Matching offers are skipped; existing outcomes are not overwritten.").setNegativeButton("Cancel",null).setPositiveButton("Import",(d,w)->runBackup(uri,true)).show();}
+        else runBackup(uri,false);
     }
-    @Override protected void onDestroy() {if(store!=null)store.close();super.onDestroy();}
+    private void runBackup(Uri uri,boolean importing){
+        if(backupBusy)return;backupBusy=true;
+        Toast.makeText(this,importing?"Importing history…":"Exporting history…",Toast.LENGTH_SHORT).show();
+        new Thread(()->{
+            String message;boolean success=false;
+            try(OfferHistoryStore backupStore=new OfferHistoryStore(getApplicationContext())){
+                if(importing){try(java.io.InputStream stream=getContentResolver().openInputStream(uri)){
+                    if(stream==null)throw new java.io.IOException("Cannot open file");OfferHistoryStore.ImportResult r=backupStore.importCsv(new java.io.InputStreamReader(stream,StandardCharsets.UTF_8));message="Imported "+r.added+" offers; skipped "+r.duplicates+" duplicates.";}}
+                else{try(OutputStream stream=getContentResolver().openOutputStream(uri,"wt")){
+                    if(stream==null)throw new java.io.IOException("Cannot open file");java.io.Writer writer=new java.io.BufferedWriter(new java.io.OutputStreamWriter(stream,StandardCharsets.UTF_8));backupStore.writeCsv(writer);writer.flush();message="Offer history exported";}}
+                success=true;
+            }catch(Exception e){message=(importing?"Import":"Export")+" failed: "+e.getMessage();}
+            final String msg=message;final boolean ok=success;
+            runOnUiThread(()->{backupBusy=false;if(isFinishing()||isDestroyed())return;Toast.makeText(this,msg,Toast.LENGTH_LONG).show();if(importing&&ok){pageOffset=0;refreshList();}});
+        },"offer-history-backup").start();
+    }
+    @Override protected void onPause(){searchHandler.removeCallbacks(searchRefresh);super.onPause();}
+    @Override protected void onDestroy() {searchHandler.removeCallbacks(searchRefresh);if(store!=null)store.close();super.onDestroy();}
 }

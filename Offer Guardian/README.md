@@ -35,3 +35,8 @@ The price-only fast path needs two agreeing payout/count/merchant/X frames; it d
 ## Tests & limits
 
 Host-side Java/SQLite regression checks are included in the workflow. They cover the $5/11-minute offer, 61-/67-minute offers, unknown hours, 1/2/3 tier routing, History sorting/filtering, time windows, and Waze verification. The Android SDK/Gradle toolchain is not available in this workspace: APK compilation, UI rendering and real-device touch/OCR behaviour have not been certified. Automated Uber interactions may be subject to service terms; this is an independent private tool without network permissions.
+
+
+## v0.9.10
+- Offer History quick filter chips for All / 1 / 2 / 3 deliveries.
+- Delivery-count filtering combines with date, search, advanced filters, time windows and sorting.

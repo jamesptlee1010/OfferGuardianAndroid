@@ -225,7 +225,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         final List<String> args;
         Filter(String w,List<String> a) {where=w;args=a;}
     }
-    private Filter filter(String tab,String search,long firstIncludedMillis,OfferHistoryFilters historyFilters, OfferHistoryTimeWindow timeWindow) {
+    private Filter filter(String tab,String search,long firstIncludedMillis,OfferHistoryFilters historyFilters, OfferHistoryTimeWindow timeWindow, OfferHistoryDeliveryFilter deliveryFilter) {
         StringBuilder where=new StringBuilder("1=1");
         List<String> args=new ArrayList<>();
         if("ACCEPTED".equals(tab)) where.append(" AND outcome='ACCEPTED'");
@@ -248,6 +248,11 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             where.append(" AND ").append(window.where);
             args.addAll(window.args);
         }
+        if(deliveryFilter!=null && deliveryFilter.active()) {
+            OfferHistoryDeliveryFilter.Sql quick=deliveryFilter.toSql();
+            where.append(" AND ").append(quick.where);
+            for(String arg:quick.args) args.add(arg);
+        }
         return new Filter(where.toString(),args);
     }
     public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,int limit,int offset) {
@@ -263,12 +268,17 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
                                         OfferHistoryFilters displayFilters,OfferHistorySort sort,
                                         int limit,int offset) {
         return list(tab,search,firstIncludedMillis,displayFilters,sort,
-                OfferHistoryTimeWindow.disabled(),limit,offset);
+                OfferHistoryTimeWindow.disabled(),OfferHistoryDeliveryFilter.ALL,limit,offset);
     }
     public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
             OfferHistoryFilters displayFilters,OfferHistorySort sort,OfferHistoryTimeWindow timeWindow,
             int limit,int offset) {
-        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters,timeWindow);
+        return list(tab,search,firstIncludedMillis,displayFilters,sort,timeWindow,OfferHistoryDeliveryFilter.ALL,limit,offset);
+    }
+    public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
+            OfferHistoryFilters displayFilters,OfferHistorySort sort,OfferHistoryTimeWindow timeWindow,
+            OfferHistoryDeliveryFilter deliveryFilter,int limit,int offset) {
+        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters,timeWindow,deliveryFilter);
         List<String> args=new ArrayList<>(filter.args);
         String order=(sort==null?OfferHistorySort.NEWEST:sort).orderBy();
         String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes "+
@@ -287,11 +297,15 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     }
     public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis,
                                                      OfferHistoryFilters displayFilters) {
-        return statistics(tab,search,firstIncludedMillis,displayFilters,OfferHistoryTimeWindow.disabled());
+        return statistics(tab,search,firstIncludedMillis,displayFilters,OfferHistoryTimeWindow.disabled(),OfferHistoryDeliveryFilter.ALL);
     }
     public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis,
             OfferHistoryFilters displayFilters,OfferHistoryTimeWindow timeWindow) {
-        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters,timeWindow);
+        return statistics(tab,search,firstIncludedMillis,displayFilters,timeWindow,OfferHistoryDeliveryFilter.ALL);
+    }
+    public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis,
+            OfferHistoryFilters displayFilters,OfferHistoryTimeWindow timeWindow,OfferHistoryDeliveryFilter deliveryFilter) {
+        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters,timeWindow,deliveryFilter);
         OfferHistoryStats stats=new OfferHistoryStats();
         String sql="SELECT payout_cents,CASE WHEN extraction_status IN ('VERIFIED','CORRECTED') " +
             "THEN minutes ELSE 0 END," +

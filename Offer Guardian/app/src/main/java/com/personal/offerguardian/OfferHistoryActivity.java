@@ -43,7 +43,7 @@ public final class OfferHistoryActivity extends Activity {
     private static final int BORDER=Color.rgb(224,231,226);
     private static final int REQUEST_CSV=102;
     private OfferHistoryStore store;
-    private LinearLayout root,results,tabs,summary,averages;
+    private LinearLayout root,results,tabs,summary,averages,deliveryFilterRow;
     private EditText search;
     private TextView dateButton,filterButton,sortButton,filterSummary,sortSummary,headerSub,activeRules;
     private static final String HISTORY_FILTER_PREFS="offer_history_view_filters_v1";
@@ -51,6 +51,7 @@ public final class OfferHistoryActivity extends Activity {
     private OfferHistorySort historySort=OfferHistorySort.NEWEST;
     private OfferHistoryFilters historyFilters=OfferHistoryFilters.none();
     private OfferHistoryTimeWindow historyTime=OfferHistoryTimeWindow.disabled();
+    private OfferHistoryDeliveryFilter deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;
     private String selectedTab="ALL";
     private String searchTerm="";
     private String dateRange="TODAY";
@@ -61,6 +62,7 @@ public final class OfferHistoryActivity extends Activity {
         store=new OfferHistoryStore(this);
         historyFilters=loadHistoryFilters();
         historyTime=loadHistoryTime();
+        deliveryQuickFilter=loadDeliveryQuickFilter();
         historySort=loadHistorySort();
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
@@ -101,7 +103,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.9",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.10",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -116,7 +118,10 @@ public final class OfferHistoryActivity extends Activity {
         summary=row();summary.setGravity(Gravity.TOP);root.addView(summary,box(-2,8));
         averages=row();averages.setGravity(Gravity.TOP);root.addView(averages,box(-2,16));
         tabs=row();tabs.setBackground(bg(Color.rgb(237,243,238),0,12));
-        tabs.setPadding(dp(4),dp(4),dp(4),dp(4));root.addView(tabs,box(50,14));
+        tabs.setPadding(dp(4),dp(4),dp(4),dp(4));root.addView(tabs,box(50,12));
+
+        deliveryFilterRow=col();
+        root.addView(deliveryFilterRow,box(-2,12));
 
         LinearLayout searchRow=row();root.addView(searchRow,box(-2,9));
         search=new EditText(this);search.setSingleLine(true);search.setTextSize(14);
@@ -228,6 +233,11 @@ public final class OfferHistoryActivity extends Activity {
                     p.getInt("time_start",17*60),p.getInt("time_end",20*60));
         } catch(IllegalArgumentException invalid){return OfferHistoryTimeWindow.disabled();}
     }
+    private OfferHistoryDeliveryFilter loadDeliveryQuickFilter() {
+        String code=getSharedPreferences(HISTORY_FILTER_PREFS,MODE_PRIVATE)
+                .getString("delivery_quick","ALL");
+        return OfferHistoryDeliveryFilter.fromCode(code);
+    }
     private void saveHistoryFilters() {
         SharedPreferences.Editor edit=getSharedPreferences(HISTORY_FILTER_PREFS,MODE_PRIVATE).edit();
         for(int i=0;i<OfferHistoryFilters.FIELD_COUNT;i++)edit.putString("field_"+i,historyFilters.input(i));
@@ -235,6 +245,7 @@ public final class OfferHistoryActivity extends Activity {
         edit.putBoolean("time_enabled",historyTime.enabled);
         edit.putInt("time_start",historyTime.startMinute);
         edit.putInt("time_end",historyTime.endMinute);
+        edit.putString("delivery_quick",deliveryQuickFilter.code);
         edit.apply();
     }
     private OfferHistorySort loadHistorySort() {
@@ -258,6 +269,45 @@ public final class OfferHistoryActivity extends Activity {
                 dialog.dismiss();
                 refreshList();
             }).setNegativeButton("Cancel",null).show();
+    }
+    private void renderDeliveryQuickFilter() {
+        if(deliveryFilterRow==null)return;
+        deliveryFilterRow.removeAllViews();
+        LinearLayout shell=row();
+        shell.setPadding(dp(12),dp(9),dp(12),dp(9));
+        shell.setBackground(bg(Color.rgb(239,248,241),Color.rgb(170,214,181),12));
+        deliveryFilterRow.addView(shell,box(-2,6));
+
+        TextView lead=label("Deliveries",14,GREEN,true);
+        lead.setPadding(dp(2),0,dp(8),0);
+        shell.addView(lead);
+        TextView divider=label("|",14,Color.rgb(170,190,175),false);
+        divider.setPadding(dp(4),0,dp(8),0);
+        shell.addView(divider);
+        for(OfferHistoryDeliveryFilter filter:OfferHistoryDeliveryFilter.values()) {
+            TextView chip=label(filter.chipLabel,14,deliveryQuickFilter==filter?Color.WHITE:GREEN,true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(12),dp(7),dp(12),dp(7));
+            chip.setBackground(bg(deliveryQuickFilter==filter?GREEN:Color.WHITE,
+                    deliveryQuickFilter==filter?GREEN:Color.rgb(170,214,181),10));
+            chip.setOnClickListener(v->{
+                deliveryQuickFilter=filter;
+                saveHistoryFilters();
+                visible=35;
+                refreshList();
+            });
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+            if(shell.getChildCount()>2) lp.leftMargin=dp(7);
+            shell.addView(chip,lp);
+        }
+        if(deliveryQuickFilter.active()) {
+            TextView hint=label("Showing "+deliveryQuickFilter.summary(),12,GRAY,false);
+            hint.setGravity(Gravity.CENTER_HORIZONTAL);
+            deliveryFilterRow.addView(hint,box(-2,0));
+        }
+    }
+    private boolean anyDisplayFilterActive() {
+        return historyFilters.active() || historyTime.enabled || deliveryQuickFilter.active();
     }
     private void showHistoryFilters() {
         ScrollView scroll=new ScrollView(this);
@@ -327,7 +377,7 @@ public final class OfferHistoryActivity extends Activity {
             .setView(scroll)
             .setNegativeButton("Cancel",null)
             .setNeutralButton("Clear all",(d,w)->{
-                historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();saveHistoryFilters();visible=35;refreshList();
+                historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;saveHistoryFilters();visible=35;refreshList();
             })
             .setPositiveButton("Apply",null)
             .create();
@@ -350,7 +400,7 @@ public final class OfferHistoryActivity extends Activity {
         if(results==null)return;
         if(activeRules!=null)activeRules.setText(Prefs.ruleSummary(Prefs.of(this)));
         final long cutoff=firstIncludedMillis();
-        OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters,historyTime);
+        OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters,historyTime,deliveryQuickFilter);
         summary.removeAllViews();averages.removeAllViews();
         if("ACCEPTED".equals(selectedTab)) {
             headerSub.setText("Confirmed accepted offers and their estimated averages");
@@ -368,7 +418,7 @@ public final class OfferHistoryActivity extends Activity {
             summaryItem(averages,"Avg. $/km",s.averagePerKm(),Color.rgb(229,249,235));
         } else {
             headerSub.setText("Your offer performance and estimated earning rates");
-            summaryItem(summary,historyFilters.active()||historyTime.enabled?"Matching offers":"All offers",Integer.toString(s.count()),Color.WHITE);
+            summaryItem(summary,anyDisplayFilterActive()?"Matching offers":"All offers",Integer.toString(s.count()),Color.WHITE);
             summaryItem(summary,"Accepted",Integer.toString(s.accepted()),Color.rgb(226,247,230));
             summaryItem(summary,"Declined",Integer.toString(s.declined()),Color.rgb(255,238,237));
             summaryItem(summary,"Highest",s.highestOffer(),Color.rgb(229,247,233));
@@ -378,6 +428,7 @@ public final class OfferHistoryActivity extends Activity {
             summaryItem(averages,"Avg. $/km",s.averagePerKm(),Color.rgb(229,249,235));
         }
         tabs.removeAllViews();tab("All offers","ALL");tab("Accepted","ACCEPTED");tab("Highest","HIGHEST");
+        renderDeliveryQuickFilter();
         dateButton.setText(periodLabel());
         filterButton.setText(historyFilters.active()||historyTime.enabled?
                 "Filters ("+(historyFilters.activeGroups()+(historyTime.enabled?1:0))+") ▾":"Filters ▾");
@@ -387,24 +438,36 @@ public final class OfferHistoryActivity extends Activity {
         sortSummary.setText("Sorting: "+historySort.label+" · shown after date, search and filters");
         filterButton.setBackground(bg(historyFilters.active()||historyTime.enabled?Color.rgb(225,247,230):Color.WHITE,
             historyFilters.active()||historyTime.enabled?Color.rgb(148,207,160):BORDER,12));
-        filterSummary.setVisibility(historyFilters.active()||historyTime.enabled?View.VISIBLE:View.GONE);
-        filterSummary.setText((historyTime.enabled?"Received "+historyTime.summary()+" · ":"")+
-                historyFilters.summary()+" · Display only; live rules unchanged");
+        boolean showSummary=historyFilters.active()||historyTime.enabled||deliveryQuickFilter.active();
+        filterSummary.setVisibility(showSummary?View.VISIBLE:View.GONE);
+        StringBuilder summaryText=new StringBuilder();
+        if(deliveryQuickFilter.active()) summaryText.append(deliveryQuickFilter.summary());
+        if(historyTime.enabled) {
+            if(summaryText.length()>0) summaryText.append(" · ");
+            summaryText.append("Received ").append(historyTime.summary());
+        }
+        if(historyFilters.active()) {
+            if(summaryText.length()>0) summaryText.append(" · ");
+            summaryText.append(historyFilters.summary());
+        }
+        if(summaryText.length()==0) summaryText.append("Display only; live rules unchanged");
+        else summaryText.append(" · Display only; live rules unchanged");
+        filterSummary.setText(summaryText.toString());
         results.removeAllViews();
         if("ACCEPTED".equals(selectedTab))
             addLine(results,"Estimated total of accepted offers in this view: "+s.acceptedEstimate(),13,GREEN,true,9);
         else if("HIGHEST".equals(selectedTab))
             addLine(results,"Ranking: "+historySort.label,13,GRAY,false,9);
         addLine(results,"Averages use every matching offer, including offers below the visible list limit. Hourly and kilometre averages omit offers with missing time or distance.",11,GRAY,false,11);
-        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,historyTime,Math.min(100,visible),0);
+        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,historyTime,deliveryQuickFilter,Math.min(100,visible),0);
         if(offers.isEmpty()) {
             LinearLayout empty=col();empty.setPadding(dp(15),dp(28),dp(15),dp(28));
             empty.setBackground(bg(Color.WHITE,BORDER,14));results.addView(empty,box(-2,8));
             addLine(empty,"No offers match this view",17,DARK,true,9);
-            addLine(empty,historyFilters.active()||historyTime.enabled?"Try a wider time window, price/rate range, date period or clear the history filters.":
+            addLine(empty,anyDisplayFilterActive()?"Try a wider delivery-count filter, time window, price/rate range, date period or clear the history filters.":
                 "Open Uber Driver with monitoring enabled. Newly detected offers appear here. If an outcome is unknown, open an offer to mark it.",13,GRAY,false,8);
-            if(historyFilters.active()||historyTime.enabled) {
-                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();saveHistoryFilters();visible=35;refreshList();});
+            if(anyDisplayFilterActive()) {
+                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();deliveryQuickFilter=OfferHistoryDeliveryFilter.ALL;saveHistoryFilters();visible=35;refreshList();});
                 empty.addView(reset,box(45,0));
             }
             return;
@@ -434,6 +497,8 @@ public final class OfferHistoryActivity extends Activity {
             first.addView(ranking);}
         TextView price=label(OfferRate.money(item.cents),23,rank==1?GREEN:DARK,true);
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.leftMargin=rank>0?dp(7):0;first.addView(price,p);
+        int deliveryCount=OfferHistoryDeliveryFilter.detectCount(item.type);
+        if(deliveryCount>0) first.addView(pill(deliveryCount==1?"1 Delivery":deliveryCount+" Deliveries",Color.rgb(227,246,229),GREEN));
         int badgeColor=OfferHistoryStore.ACCEPTED.equals(item.outcome)?GREEN:
             OfferHistoryStore.DECLINED.equals(item.outcome)?Color.rgb(168,45,43):GRAY;
         String outcome=offerOutcome(item);

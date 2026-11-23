@@ -528,7 +528,6 @@ public final class OfferAccessibilityService extends AccessibilityService {
             OfferExtractionGuard.Result safe=OfferExtractionGuard.check(parsed);
             if(confirmedHourBound && cachedMinutes<=0 &&
                     parsed.parsedHours==confirmedLowerHours &&
-                    parsed.metres==cachedMetres &&
                     OfferSafeDecline.evaluate(activeRules,payout,parsed).outcome==
                             OfferRuleEngine.Outcome.DECLINE) {
                 // A two-frame hour-bound decline was already proven, but Waze's
@@ -549,7 +548,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     return;
                 }
                 try(OfferHistoryStore store=new OfferHistoryStore(this)) {
-                    store.correctVerified(lastHistoryId,parsed,a.rawPayout);
+                    store.correctVerified(lastHistoryId,parsed,a.rawPayout,
+                            correctionVerifier.confirmedDistanceMetres());
                 } catch(Exception e) {
                     status("Hour-bound history upgrade failed; no tap: "+e.getClass().getSimpleName());
                     return;
@@ -558,9 +558,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 confirmedHourBound=false;confirmedLowerHours=0;confirmedCountDecline=false;
                 metricsWereCorrected=true;lastOutcome=null;
                 resetWazeVerification();
-            } else if(safe.valid && cachedMinutes>0 && cachedMetres>0 &&
-                    (cachedMinutes!=minutes || cachedMetres!=metres ||
-                     correctionVerifier.isPending())) {
+            } else if(safe.valid && cachedMinutes>0 &&
+                    (cachedMinutes!=minutes || correctionVerifier.isPending())) {
                 // A later OCR read contradicts the stored metrics. Withhold
                 // overlay/gesture until TWO matching new frames support a correction.
                 hideOverlay();lastOutcome=OfferRuleEngine.Outcome.REVIEW;
@@ -573,7 +572,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     return;
                 }
                 try(OfferHistoryStore store=new OfferHistoryStore(this)) {
-                    store.correctVerified(lastHistoryId,parsed,a.rawPayout);
+                    store.correctVerified(lastHistoryId,parsed,a.rawPayout,
+                            correctionVerifier.confirmedDistanceMetres());
                 } catch(Exception e) {status("Correction save failed: "+e.getClass().getSimpleName());}
                 cachedMinutes=minutes;cachedMetres=metres;
                 lastOutcome=null;
@@ -591,8 +591,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             if(sameOffer) {
                 // Most second Waze frames need NO SQLite work. Only backfill fields
                 // if the first screenshot missed details and the new one supplies them.
-                boolean missingFilled=(cachedMinutes<=0&&parsed.minutes>0) ||
-                        (cachedMetres<=0&&parsed.metres>0) ||
+                boolean missingFilled=(cachedMetres<=0&&parsed.metres>0) ||
                         (cachedPickup.isEmpty()&&!parsed.pickup.isEmpty()) ||
                         (cachedDestination.isEmpty()&&!parsed.destination.isEmpty());
                 if(missingFilled) {
@@ -600,7 +599,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                         store.fillMissing(lastHistoryId,parsed);
                     }
                 }
-                if(cachedMinutes<=0)cachedMinutes=parsed.minutes;
+                // Never upgrade a count/price-only record on one unverified time frame.
+                if(cachedMinutes>0)cachedMinutes=parsed.minutes;
                 if(cachedDeliveryCount<=0)cachedDeliveryCount=parsed.deliveryCount;
                 if(cachedMetres<=0)cachedMetres=parsed.metres;
                 if(cachedPickup.isEmpty())cachedPickup=parsed.pickup;
@@ -608,7 +608,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 minutes=cachedMinutes;metres=cachedMetres;
             } else {
                 try(OfferHistoryStore store=new OfferHistoryStore(this)) {
-                    lastHistoryId=store.record((int)Math.round(payout*100),parsed,a.rawPayout);
+                    lastHistoryId=store.record((int)Math.round(payout*100),parsed,a.rawPayout,
+                            readVerifier.confirmedDistanceMetres());
                 }
                 cachedMinutes=minutes;cachedMetres=metres;cachedDeliveryCount=parsed.deliveryCount;
                 confirmedHourBound=false;confirmedLowerHours=0;confirmedCountDecline=false;
@@ -728,14 +729,15 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         retryBudget.reset();fastRetryPending=false;
         lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
-        cachedMinutes=OfferExtractionGuard.check(parsed).valid?parsed.minutes:0;
+        cachedMinutes=countVerifier.hasConfirmedExactDuration()?parsed.minutes:0;
         cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
         cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
         lastOutcome=OfferRuleEngine.Outcome.DECLINE;reviewAlerted=false;autoDeclineSent=false;
         confirmedCountDecline=true;confirmedHourBound=false;confirmedLowerHours=0;
         try(OfferHistoryStore store=new OfferHistoryStore(this)) {
             lastHistoryId=cachedMinutes>0?
-                    store.record((int)Math.round(payout*100),parsed,assessment.rawPayout):
+                    store.record((int)Math.round(payout*100),parsed,assessment.rawPayout,
+                            countVerifier.confirmedDistanceMetres()):
                     store.recordCountRule((int)Math.round(payout*100),parsed,assessment.rawPayout);
         } catch(Exception e) {
             lastHistoryId=-1;status("Confirmed count but history write failed; no tap: "+
@@ -780,12 +782,16 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         retryBudget.reset();fastRetryPending=false;
         lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
-        cachedMinutes=0;cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
+        cachedMinutes=countVerifier.hasConfirmedExactDuration()?parsed.minutes:0;
+        cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
         cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
         lastOutcome=OfferRuleEngine.Outcome.DECLINE;reviewAlerted=false;autoDeclineSent=false;
         confirmedCountDecline=true;confirmedHourBound=false;confirmedLowerHours=0;
         try(OfferHistoryStore store=new OfferHistoryStore(this)) {
-            lastHistoryId=store.recordCountRule((int)Math.round(payout*100),parsed,assessment.rawPayout);
+            lastHistoryId=cachedMinutes>0?
+                    store.record((int)Math.round(payout*100),parsed,assessment.rawPayout,
+                            countVerifier.confirmedDistanceMetres()):
+                    store.recordCountRule((int)Math.round(payout*100),parsed,assessment.rawPayout);
         } catch(Exception e) {
             lastHistoryId=-1;status("Tier payout verified, but history write failed; no tap: "+
                     e.getClass().getSimpleName());return;
@@ -823,7 +829,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         retryBudget.reset();fastRetryPending=false;
         lastAmount=payout;lastDecisionAt=now;lastX=visual.x;lastY=visual.y;
-        cachedMinutes=0;cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
+        cachedMinutes=countVerifier.hasConfirmedExactDuration()?parsed.minutes:0;
+        cachedMetres=parsed.metres;cachedDeliveryCount=parsed.deliveryCount;
         confirmedCountDecline=false;
         cachedPickup=parsed.pickup;cachedDestination=parsed.destination;
         lastOutcome=OfferRuleEngine.Outcome.DECLINE;reviewAlerted=false;autoDeclineSent=false;

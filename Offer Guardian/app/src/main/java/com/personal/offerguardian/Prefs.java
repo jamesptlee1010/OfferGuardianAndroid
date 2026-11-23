@@ -87,11 +87,9 @@ final class Prefs {
                 p.getFloat(tierKey(n,"min_price"),(float)legacy.minPrice),
                 p.getBoolean(tierKey(n,"hourly_on"),legacy.hourlyOn),
                 p.getFloat(tierKey(n,"min_hourly"),(float)legacy.minHourly),
-                p.getBoolean(tierKey(n,"km_on"),legacy.kilometreOn),
-                p.getFloat(tierKey(n,"min_per_km"),(float)legacy.minPerKm),mode,
+                false,0.0,mode,
                 false,1,
-                p.getBoolean(tierKey(n,"distance_on"),false),
-                p.getFloat(tierKey(n,"max_distance"),15.0f));
+                false,0.0);
         }
         return new TieredOfferRules(cs,enabled);
     }
@@ -104,7 +102,7 @@ final class Prefs {
         return new OfferRuleEngine.Config(
             p.getBoolean(RULE_PRICE,true),threshold(p),
             p.getBoolean(RULE_HOURLY,false),p.getFloat(RULE_MIN_HOUR,40.0f),
-            p.getBoolean(RULE_KM,false),p.getFloat(RULE_MIN_KM,3.0f),mode,
+            false,0.0,mode,
             p.getBoolean(RULE_DELIVERIES,false),p.getInt(RULE_MIN_DELIVERIES,2));
     }
 }

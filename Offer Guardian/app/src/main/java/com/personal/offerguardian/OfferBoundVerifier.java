@@ -23,7 +23,7 @@ public final class OfferBoundVerifier {
         int pc=(int)Math.round(payout*100);
         String merchant=d.pickup.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+"," ").trim();
         if(pending && now>at && now-at<=MAX_GAP_MS && cents==pc && hours==d.parsedHours &&
-                metres==d.metres && (!countRequired||d.deliveryCount==deliveryCount) && Math.abs(x-sx)<=3 && Math.abs(y-sy)<=4 &&
+                (!countRequired||d.deliveryCount==deliveryCount) && Math.abs(x-sx)<=3 && Math.abs(y-sy)<=4 &&
                 pickup.equals(merchant)) {reset();return true;}
         pending=true;at=now;cents=pc;hours=d.parsedHours;metres=d.metres;
         x=sx;y=sy;deliveryCount=d.deliveryCount;pickup=merchant;

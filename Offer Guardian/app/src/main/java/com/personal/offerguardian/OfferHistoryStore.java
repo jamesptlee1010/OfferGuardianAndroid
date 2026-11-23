@@ -66,6 +66,11 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     }
 
     public synchronized long record(int payoutCents,OfferDetailsParser.Details details,String rawPayout) {
+        return record(payoutCents,details,rawPayout,details.metres);
+    }
+    /** Optional kilometres are stored only if the verifier saw the same value twice. */
+    public synchronized long record(int payoutCents,OfferDetailsParser.Details details,
+            String rawPayout,int independentlyVerifiedMetres) {
         ContentValues values=new ContentValues();
         values.put("seen_at",System.currentTimeMillis());
         values.put("payout_cents",payoutCents);
@@ -73,7 +78,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         values.put("pickup",details.pickup);
         values.put("destination",details.destination);
         values.put("minutes",details.minutes);
-        values.put("metres",details.metres);
+        values.put("metres",Math.max(0,independentlyVerifiedMetres));
         values.put("raw_payout",rawPayout==null?"":rawPayout);
         values.put("raw_duration",details.rawDuration);
         values.put("raw_distance",details.rawDistance);
@@ -146,9 +151,13 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
 
     /** Replace metrics only after two NEW consistent and plausible observations. */
     public synchronized void correctVerified(long id,OfferDetailsParser.Details d,String rawPayout) {
+        correctVerified(id,d,rawPayout,d.metres);
+    }
+    public synchronized void correctVerified(long id,OfferDetailsParser.Details d,
+            String rawPayout,int independentlyVerifiedMetres) {
         if(id<=0||!OfferExtractionGuard.check(d).valid)return;
         ContentValues c=new ContentValues();
-        c.put("minutes",d.minutes);c.put("metres",d.metres);
+        c.put("minutes",d.minutes);c.put("metres",Math.max(0,independentlyVerifiedMetres));
         c.put("raw_duration",d.rawDuration);c.put("raw_distance",d.rawDistance);
         c.put("raw_payout",rawPayout==null?"":rawPayout);
         c.put("extraction_status","CORRECTED");
@@ -170,7 +179,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             if(cur.getString(0).isEmpty() && !more.pickup.isEmpty()) update.put("pickup",more.pickup);
             if(cur.getString(1).isEmpty() && !more.destination.isEmpty()) update.put("destination",more.destination);
             if(cur.getInt(2)==0 && more.minutes>0) update.put("minutes",more.minutes);
-            if(cur.getInt(3)==0 && more.metres>0) update.put("metres",more.metres);
+            // Never promote a single-frame distance to independently verified data.
             if(cur.getString(4).equals("Delivery") && !more.type.equals("Delivery")) update.put("type",more.type);
             if(update.size()>0) getWritableDatabase().update(TABLE,update,"id=?",new String[]{Long.toString(id)});
         } finally {cur.close();}
@@ -216,7 +225,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         final List<String> args;
         Filter(String w,List<String> a) {where=w;args=a;}
     }
-    private Filter filter(String tab,String search,long firstIncludedMillis,OfferHistoryFilters historyFilters) {
+    private Filter filter(String tab,String search,long firstIncludedMillis,OfferHistoryFilters historyFilters, OfferHistoryTimeWindow timeWindow) {
         StringBuilder where=new StringBuilder("1=1");
         List<String> args=new ArrayList<>();
         if("ACCEPTED".equals(tab)) where.append(" AND outcome='ACCEPTED'");
@@ -234,6 +243,11 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             where.append(" AND ").append(display.where);
             args.addAll(display.args);
         }
+        if(timeWindow!=null&&timeWindow.enabled) {
+            OfferHistoryTimeWindow.Sql window=timeWindow.toSql();
+            where.append(" AND ").append(window.where);
+            args.addAll(window.args);
+        }
         return new Filter(where.toString(),args);
     }
     public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,int limit,int offset) {
@@ -248,7 +262,13 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
                                         OfferHistoryFilters displayFilters,OfferHistorySort sort,
                                         int limit,int offset) {
-        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters);
+        return list(tab,search,firstIncludedMillis,displayFilters,sort,
+                OfferHistoryTimeWindow.disabled(),limit,offset);
+    }
+    public synchronized List<Item> list(String tab,String search,long firstIncludedMillis,
+            OfferHistoryFilters displayFilters,OfferHistorySort sort,OfferHistoryTimeWindow timeWindow,
+            int limit,int offset) {
+        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters,timeWindow);
         List<String> args=new ArrayList<>(filter.args);
         String order=(sort==null?OfferHistorySort.NEWEST:sort).orderBy();
         String sql="SELECT id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes "+
@@ -267,7 +287,11 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
     }
     public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis,
                                                      OfferHistoryFilters displayFilters) {
-        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters);
+        return statistics(tab,search,firstIncludedMillis,displayFilters,OfferHistoryTimeWindow.disabled());
+    }
+    public synchronized OfferHistoryStats statistics(String tab,String search,long firstIncludedMillis,
+            OfferHistoryFilters displayFilters,OfferHistoryTimeWindow timeWindow) {
+        Filter filter=filter(tab,search,firstIncludedMillis,displayFilters,timeWindow);
         OfferHistoryStats stats=new OfferHistoryStats();
         String sql="SELECT payout_cents,CASE WHEN extraction_status IN ('VERIFIED','CORRECTED') " +
             "THEN minutes ELSE 0 END," +

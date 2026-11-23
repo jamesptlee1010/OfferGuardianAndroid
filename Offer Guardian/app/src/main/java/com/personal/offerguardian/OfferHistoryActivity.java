@@ -2,6 +2,7 @@ package com.personal.offerguardian;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -16,6 +17,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -48,6 +50,7 @@ public final class OfferHistoryActivity extends Activity {
     private static final String HISTORY_SORT_PREFS="offer_history_view_sort_v1";
     private OfferHistorySort historySort=OfferHistorySort.NEWEST;
     private OfferHistoryFilters historyFilters=OfferHistoryFilters.none();
+    private OfferHistoryTimeWindow historyTime=OfferHistoryTimeWindow.disabled();
     private String selectedTab="ALL";
     private String searchTerm="";
     private String dateRange="TODAY";
@@ -57,6 +60,7 @@ public final class OfferHistoryActivity extends Activity {
         super.onCreate(bundle);
         store=new OfferHistoryStore(this);
         historyFilters=loadHistoryFilters();
+        historyTime=loadHistoryTime();
         historySort=loadHistorySort();
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
@@ -97,7 +101,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.8",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.9",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -217,10 +221,20 @@ public final class OfferHistoryActivity extends Activity {
         try {return OfferHistoryFilters.fromInputs(values,prefs.getBoolean("match_all",true));}
         catch(IllegalArgumentException badOldState) {return OfferHistoryFilters.none();}
     }
+    private OfferHistoryTimeWindow loadHistoryTime() {
+        SharedPreferences p=getSharedPreferences(HISTORY_FILTER_PREFS,MODE_PRIVATE);
+        try {
+            return new OfferHistoryTimeWindow(p.getBoolean("time_enabled",false),
+                    p.getInt("time_start",17*60),p.getInt("time_end",20*60));
+        } catch(IllegalArgumentException invalid){return OfferHistoryTimeWindow.disabled();}
+    }
     private void saveHistoryFilters() {
         SharedPreferences.Editor edit=getSharedPreferences(HISTORY_FILTER_PREFS,MODE_PRIVATE).edit();
         for(int i=0;i<OfferHistoryFilters.FIELD_COUNT;i++)edit.putString("field_"+i,historyFilters.input(i));
         edit.putBoolean("match_all",historyFilters.matchAll());
+        edit.putBoolean("time_enabled",historyTime.enabled);
+        edit.putInt("time_start",historyTime.startMinute);
+        edit.putInt("time_end",historyTime.endMinute);
         edit.apply();
     }
     private OfferHistorySort loadHistorySort() {
@@ -273,6 +287,29 @@ public final class OfferHistoryActivity extends Activity {
                 fields[j]=field;
             }
         }
+        addLine(panel,"TIME OF DAY · LOCAL PHONE TIME",12,GREEN,true,8);
+        CheckBox useTime=new CheckBox(this);
+        useTime.setText("Only offers received between these times");
+        useTime.setChecked(historyTime.enabled);useTime.setTextSize(13);
+        panel.addView(useTime,box(-2,7));
+        int[] clockTimes={historyTime.startMinute,historyTime.endMinute};
+        LinearLayout timeRow=row();panel.addView(timeRow,box(-2,8));
+        TextView[] timeButtons=new TextView[2];
+        for(int i=0;i<2;i++) {
+            final int index=i;
+            timeButtons[i]=softButton((i==0?"From ":"To ")+OfferHistoryTimeWindow.clock(clockTimes[i]),v->{
+                TimePickerDialog pick=new TimePickerDialog(this,(picker,hour,minute)->{
+                    clockTimes[index]=hour*60+minute;
+                    timeButtons[index].setText((index==0?"From ":"To ")+
+                            OfferHistoryTimeWindow.clock(clockTimes[index]));
+                },clockTimes[index]/60,clockTimes[index]%60,false);
+                pick.show();
+            });
+            LinearLayout.LayoutParams clockParams=new LinearLayout.LayoutParams(0,dp(46),1);
+            if(i==1)clockParams.leftMargin=dp(9);
+            timeRow.addView(timeButtons[i],clockParams);
+        }
+        addLine(panel,"5 pm–8 pm includes offers at 5:00 pm through 8:00 pm on each selected day. Overnight ranges such as 10 pm–2 am also work. Time is always combined with the date range and other filters.",11,GRAY,false,14);
         addLine(panel,"HOW SHOULD THE FILTERS COMBINE?",12,GREEN,true,8);
         RadioGroup combine=new RadioGroup(this);
         combine.setOrientation(RadioGroup.VERTICAL);
@@ -290,7 +327,7 @@ public final class OfferHistoryActivity extends Activity {
             .setView(scroll)
             .setNegativeButton("Cancel",null)
             .setNeutralButton("Clear all",(d,w)->{
-                historyFilters=OfferHistoryFilters.none();saveHistoryFilters();visible=35;refreshList();
+                historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();saveHistoryFilters();visible=35;refreshList();
             })
             .setPositiveButton("Apply",null)
             .create();
@@ -300,6 +337,7 @@ public final class OfferHistoryActivity extends Activity {
             try {
                 OfferHistoryFilters selected=OfferHistoryFilters.fromInputs(values,all.isChecked());
                 historyFilters=selected;
+                historyTime=new OfferHistoryTimeWindow(useTime.isChecked(),clockTimes[0],clockTimes[1]);
                 saveHistoryFilters();
                 visible=35;refreshList();dialog.dismiss();
             } catch(IllegalArgumentException error) {
@@ -312,7 +350,7 @@ public final class OfferHistoryActivity extends Activity {
         if(results==null)return;
         if(activeRules!=null)activeRules.setText(Prefs.ruleSummary(Prefs.of(this)));
         final long cutoff=firstIncludedMillis();
-        OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters);
+        OfferHistoryStats s=store.statistics(selectedTab,searchTerm,cutoff,historyFilters,historyTime);
         summary.removeAllViews();averages.removeAllViews();
         if("ACCEPTED".equals(selectedTab)) {
             headerSub.setText("Confirmed accepted offers and their estimated averages");
@@ -330,7 +368,7 @@ public final class OfferHistoryActivity extends Activity {
             summaryItem(averages,"Avg. $/km",s.averagePerKm(),Color.rgb(229,249,235));
         } else {
             headerSub.setText("Your offer performance and estimated earning rates");
-            summaryItem(summary,historyFilters.active()?"Matching offers":"All offers",Integer.toString(s.count()),Color.WHITE);
+            summaryItem(summary,historyFilters.active()||historyTime.enabled?"Matching offers":"All offers",Integer.toString(s.count()),Color.WHITE);
             summaryItem(summary,"Accepted",Integer.toString(s.accepted()),Color.rgb(226,247,230));
             summaryItem(summary,"Declined",Integer.toString(s.declined()),Color.rgb(255,238,237));
             summaryItem(summary,"Highest",s.highestOffer(),Color.rgb(229,247,233));
@@ -341,30 +379,32 @@ public final class OfferHistoryActivity extends Activity {
         }
         tabs.removeAllViews();tab("All offers","ALL");tab("Accepted","ACCEPTED");tab("Highest","HIGHEST");
         dateButton.setText(periodLabel());
-        filterButton.setText(historyFilters.active()?"Filters ("+historyFilters.activeGroups()+") ▾":"Filters ▾");
+        filterButton.setText(historyFilters.active()||historyTime.enabled?
+                "Filters ("+(historyFilters.activeGroups()+(historyTime.enabled?1:0))+") ▾":"Filters ▾");
         sortButton.setText(historySort.shortLabel);
         sortButton.setBackground(bg(historySort==OfferHistorySort.NEWEST?Color.WHITE:Color.rgb(225,247,230),
             historySort==OfferHistorySort.NEWEST?BORDER:Color.rgb(148,207,160),12));
         sortSummary.setText("Sorting: "+historySort.label+" · shown after date, search and filters");
-        filterButton.setBackground(bg(historyFilters.active()?Color.rgb(225,247,230):Color.WHITE,
-            historyFilters.active()?Color.rgb(148,207,160):BORDER,12));
-        filterSummary.setVisibility(historyFilters.active()?View.VISIBLE:View.GONE);
-        filterSummary.setText(historyFilters.summary()+"   ·   Display only; auto-decline rules unchanged");
+        filterButton.setBackground(bg(historyFilters.active()||historyTime.enabled?Color.rgb(225,247,230):Color.WHITE,
+            historyFilters.active()||historyTime.enabled?Color.rgb(148,207,160):BORDER,12));
+        filterSummary.setVisibility(historyFilters.active()||historyTime.enabled?View.VISIBLE:View.GONE);
+        filterSummary.setText((historyTime.enabled?"Received "+historyTime.summary()+" · ":"")+
+                historyFilters.summary()+" · Display only; live rules unchanged");
         results.removeAllViews();
         if("ACCEPTED".equals(selectedTab))
             addLine(results,"Estimated total of accepted offers in this view: "+s.acceptedEstimate(),13,GREEN,true,9);
         else if("HIGHEST".equals(selectedTab))
             addLine(results,"Ranking: "+historySort.label,13,GRAY,false,9);
         addLine(results,"Averages use every matching offer, including offers below the visible list limit. Hourly and kilometre averages omit offers with missing time or distance.",11,GRAY,false,11);
-        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,Math.min(100,visible),0);
+        List<OfferHistoryStore.Item> offers=store.list(selectedTab,searchTerm,cutoff,historyFilters,historySort,historyTime,Math.min(100,visible),0);
         if(offers.isEmpty()) {
             LinearLayout empty=col();empty.setPadding(dp(15),dp(28),dp(15),dp(28));
             empty.setBackground(bg(Color.WHITE,BORDER,14));results.addView(empty,box(-2,8));
             addLine(empty,"No offers match this view",17,DARK,true,9);
-            addLine(empty,historyFilters.active()?"Try a wider price/rate range, change the date period, or clear the history filters.":
+            addLine(empty,historyFilters.active()||historyTime.enabled?"Try a wider time window, price/rate range, date period or clear the history filters.":
                 "Open Uber Driver with monitoring enabled. Newly detected offers appear here. If an outcome is unknown, open an offer to mark it.",13,GRAY,false,8);
-            if(historyFilters.active()) {
-                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();saveHistoryFilters();visible=35;refreshList();});
+            if(historyFilters.active()||historyTime.enabled) {
+                TextView reset=softButton("Clear history filters",v->{historyFilters=OfferHistoryFilters.none();historyTime=OfferHistoryTimeWindow.disabled();saveHistoryFilters();visible=35;refreshList();});
                 empty.addView(reset,box(45,0));
             }
             return;

@@ -1,37 +1,37 @@
-# OfferGuardian v0.9.8 — Independent Delivery-Specific Rules
+# OfferGuardian v0.9.9 — Time-of-Day Offer History & Simplified Price/Hourly Rules
 
-**Complete GitHub-ready Android source ZIP; not an APK.** Built directly on the full v0.9.7 project. Previous Faster Waze, History Filters, History Sorting, OCR corrections, notifications and TEST ONLY functionality remain in place.
+**Complete Android GitHub-ready source project, not a compiled APK.** Built on the v0.9.8 tiered-delivery version. Retains Faster Waze, independent 1/2/3-delivery rules, History filtering/sorting, diagnostics and existing safety gates.
 
-## New Rules Builder (v0.9.8)
+## New in v0.9.9
 
-Open **Offer Rules Builder** and choose **1 Delivery**, **2 Deliveries**, or **3 Deliveries**. Each category saves its **own** enabled switch, minimum total payout, minimum estimated hourly rate, minimum A$/km, optional maximum journey distance and **ANY (OR) / ALL (AND)** combination. Each criterion has its own checkbox; unchecked criteria do not apply. **Save all three delivery rule sets** activates tiered rules together.
+### Time-of-day filters for Offer History
 
-Example configuration (not preinstalled):
+Open **Offer History → Filters**, enable **Only offers received between these times**, then choose a From and To time. For example, 5:00 pm–8:00 pm shows only offers received between 17:00 and 20:00, inclusive, on each selected date. Use the existing **Today / Last 7 days / Last 30 days / All dates** control to choose the date range separately. Overnight ranges (10:00 pm–2:00 am) work. Historical offers use the phone's local time zone, accounting for summer/winter offsets where relevant.
 
-| Header | Rule | Outcome for a lower offer |
-| --- | --- | --- |
-| `Delivery` | Solo payment ≥ A$25 | Decline below A$25 |
-| `Delivery (2)` | Double payment ≥ A$35 AND hourly ≥ A$45 | Decline when verified criteria fail |
-| `Pack & Deliver (3)` | Triple payment ≥ A$50 AND hourly ≥ A$55 | Decline when verified criteria fail |
+Time filtering applies to the offer list, search, sort and summary statistics, and combines with the existing Advanced History monetary filters. Time is always **AND** with other filters; the AND/OR switch still controls how the monetary filter groups combine. The selected time window is saved locally in History settings. Clear All resets the window. This affects **History display only**, never live auto-decline behaviour.
 
-The selected category is **exactly** the confirmed number in Uber's green heading; the previous global minimum-deliveries switch is **ignored** when tiered rules are active. No matching category is silently substituted. Count 0/unreadable, disabled categories and **4 or more deliveries** are manual review (no tap). When a rate needed by the active criteria is missing, the app waits for a verified reading rather than inventing a rate.
+### Simpler live Rules Builder
 
-**Payout-only decline:** When the selected tier has only a minimum payout rule, or an ALL (AND) tier has a minimum payout that already fails, the decision is independent of missing duration. The app still requires two agreeing images for payout, delivery count, pickup, card and X and retains the guarded Waze confirmation. Such count/payout-only history records have **Unknown hourly rate** rather than a made-up number. The $5/11-min and 61-/67-min fixes remain.
+For each of **1 delivery**, **2 deliveries**, and **3 deliveries**, you can set:
 
-**Upgrade behaviour:** Installing v0.9.8 does **not** activate tiered rules or modify your existing rules. On first opening, the three categories are prefilled with the previous payment/rate thresholds to give you a starting point. Configure each category, then press **Save all three delivery rule sets** to switch the app to the new logic. Legacy preferences remain stored as a fallback; after activating tiers, you can use **Restore previous global rules** in the Rules Builder to switch back explicitly. Save changes before returning to Uber Driver. If a save occurs while an offer is visible, the monitor invalidates any earlier cached decision and re-verifies it.
+- Minimum total offer payment (AUD)
+- Minimum estimated hourly rate (AUD/hour)
+- ANY (OR) or ALL (AND) within that category
 
-## History and navigation (unchanged)
+A verified delivery count selects only its matching tier. Unreadable count, disabled tier or 4+ deliveries stays manual review. **Distance and A$/km no longer affect live offer decisions**, and their controls are removed from the tiered editor. Prior saved distance preferences are left in storage but ignored by the live rules engine; if a category previously depended *only* on km/distance, configure a payout/hourly condition before relying on auto-decline.
 
-**Offer History** retains Advanced Filters by min/max payment, verified hourly rate, A$/km and distance, as well as sorting newest first, highest/lowest payment and highest/lowest verified hourly rate. Unknown/unverified rates are not treated as verified hourly values. These are display-only controls and **do not affect automatic offer decisions**.
+The price-only fast path needs two agreeing payout/count/merchant/X frames; it does not wait for duration or distance. If both of those readings also contain matching complete estimated duration, the History entry keeps the confirmed time and displays its hourly rate. If duration is incomplete or inconsistent, it remains Unknown. For hourly decisions, a verified time is required, but the kilometre field is optional. Legacy 1-hour minimum-bound safety and Faster Waze confirmation remain intact.
 
-Faster Waze uses guarded screenshots and two-image offer confirmation. Android may rate-limit screenshots. The app does not automatically accept offers. Auto-decline is only attempted if monitoring, visual recognition and auto-decline are enabled, **TEST ONLY is off**, and all required visual and contextual safety checks pass. Verification failures mean no tap.
+**Rate calculations remain gross estimates from Uber's offer**, not actual completion or net pay. Distance and A$/km may still be displayed in History if captured; they are informational and do not affect live declines. The grey **Unknown** outcome badge means final acceptance/rejection wasn't confirmed and is distinct from **A$/hr Unknown**.
 
-## Build through GitHub
+## Build & installation
 
-1. Extract the ZIP and upload the **contents**, not the ZIP itself, into your existing GitHub repository root. Preserve `.github/workflows/build-apk.yml` and all folder structure.
-2. Remove obsolete nested old project copies and older workflows. GitHub browser uploads are limited to 100 files per operation; this package is under that limit.
-3. Open **Actions → Build Offer Guardian APK**, run the workflow and download the debug APK from the successful build's artifacts.
-4. Export Offer History **before uninstalling** any installed version: uninstall erases local data, and GitHub debug signing certificates can change between runs, preventing in-place upgrades.
-5. On the phone, enable Accessibility and monitoring. Configure your three tiers and save. **Keep TEST ONLY enabled** while testing `Delivery`, `Delivery (2)`, `Pack & Deliver (3)`, incomplete count OCR and Waze day/night offers. Read Live Diagnostics before permitting automated declines.
+1. Extract this ZIP on your computer; upload its *contents* to the root of your existing GitHub repository, preserving `.github/workflows/build-apk.yml` and the folder hierarchy. Uploading the ZIP as one file does not build it.
+2. Remove obsolete nested copies of old source trees/workflows. Keep the new `app/build.gradle`, `tests` and workflow files together.
+3. Open GitHub **Actions → Build Offer Guardian APK → Run workflow**. When the Android compile succeeds, download the `OfferGuardian-v0.9.9-installable-APK` artifact and install its debug APK.
+4. **Export existing Offer History to CSV before uninstalling** a previous version; uninstalling deletes local history. Debug APK signing keys can change across GitHub runs, which may prevent an in-place update.
+5. Check each delivery-tier setting and save. Keep **TEST ONLY** enabled while checking live OCR and Waze. Enable real auto-decline only after successful on-device testing.
 
-**Verification limits:** Pure-Java and SQLite host tests passed. UI syntax was checked with local Android API stubs. This container does not have the complete Android SDK/Gradle toolchain, so it did **not** compile a real APK or validate OCR, gesture timing, layout or successful auto-declines on the Nubia Focus 5G. It is a private tool not affiliated with Uber or Waze; automation may affect third-party account standing. No network permission is requested by the app.
+## Tests & limits
+
+Host-side Java/SQLite regression checks are included in the workflow. They cover the $5/11-minute offer, 61-/67-minute offers, unknown hours, 1/2/3 tier routing, History sorting/filtering, time windows, and Waze verification. The Android SDK/Gradle toolchain is not available in this workspace: APK compilation, UI rendering and real-device touch/OCR behaviour have not been certified. Automated Uber interactions may be subject to service terms; this is an independent private tool without network permissions.

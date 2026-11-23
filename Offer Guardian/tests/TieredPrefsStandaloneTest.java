@@ -51,6 +51,8 @@ public final class TieredPrefsStandaloneTest {
         eq(after.configFor(2).minPrice,35.0,"double threshold");
         eq(after.configFor(2).minHourly,45.0,"double hourly threshold");
         eq(after.configFor(2).mode,OfferRuleEngine.Mode.ALL,"double mode");
+        eq(after.configFor(2).kilometreOn,false,"v0.9.9 runtime ignores old per-km rules");
+        eq(after.configFor(2).maxDistanceOn,false,"v0.9.9 runtime ignores old distance rules");
         eq(after.enabled(3),false,"triple disabled preserved");
         eq(after.configFor(3),null,"disabled tier cannot make a decision");
         eq(Prefs.rules(p).minDeliveries,2,"legacy original still unchanged");

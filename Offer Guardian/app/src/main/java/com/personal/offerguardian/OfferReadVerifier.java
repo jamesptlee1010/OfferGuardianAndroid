@@ -13,9 +13,11 @@ public final class OfferReadVerifier {
     private static final long MAX_GAP_MS=4500;
     private boolean pending;
     private long firstAt;
-    private int cents,minutes,metres,deliveryCount,x,y;
+    private int cents,minutes,metres,deliveryCount,x,y,confirmedDistanceMetres;
+    /** Independently confirmed optional distance; 0 when absent or inconsistent. */
+    public int confirmedDistanceMetres(){return confirmedDistanceMetres;}
     private String merchant="";
-    public void reset(){pending=false;firstAt=0;merchant="";}
+    public void reset(){pending=false;firstAt=0;merchant="";confirmedDistanceMetres=0;}
     public boolean isPending(){return pending;}
     public Result observe(double payout,OfferDetailsParser.Details d,
                           int screenX,int screenY,long atMs) {
@@ -34,17 +36,19 @@ public final class OfferReadVerifier {
         int proposedCents=(int)Math.round(payout*100);
         String proposedMerchant=normalize(d.pickup);
         if(pending&&atMs>firstAt&&atMs-firstAt<=MAX_GAP_MS&&
-                proposedCents==cents&&d.minutes==minutes&&d.metres==metres&&
+                proposedCents==cents&&d.minutes==minutes&&
                 (!countRequired||d.deliveryCount==deliveryCount)&&
                 Math.abs(screenX-x)<=3&&Math.abs(screenY-y)<=4&&
                 proposedMerchant.equals(merchant)) {
-            reset();return new Result(State.CONFIRMED,"Two matching OCR frames");
+            int verifiedDistance=d.metres>0 && d.metres==metres?d.metres:0;
+            reset();confirmedDistanceMetres=verifiedDistance;
+            return new Result(State.CONFIRMED,"Two matching OCR frames");
         }
         boolean changed=pending&&atMs>firstAt&&atMs-firstAt<=MAX_GAP_MS;
         pending=true;firstAt=atMs;cents=proposedCents;
         minutes=d.minutes;metres=d.metres;deliveryCount=d.deliveryCount;x=screenX;y=screenY;merchant=proposedMerchant;
         return new Result(changed?State.CHANGED:State.WAITING,
-                changed?"Payout, time, distance, delivery count, merchant or card position changed; rechecking":
+                changed?"Payout, time, delivery count, merchant or card position changed; rechecking":
                         "Awaiting second matching reading");
     }
     private static String normalize(String input) {

@@ -14,7 +14,7 @@ public final class OfferSafeDecline {
         return d != null && !d.conflictingDuration && d.hoursSeen && !d.minutesSeen &&
                 d.parsedHours >= 1 && d.parsedHours <= 12 &&
                 d.minutes == d.parsedHours * 60 &&
-                d.metres > 0 && d.metres <= 300000 &&
+                d.metres >= 0 && d.metres <= 300000 &&
                 d.pickup != null && d.pickup.trim().length() >= 3 &&
                 d.rawDuration != null && !d.rawDuration.trim().isEmpty();
     }

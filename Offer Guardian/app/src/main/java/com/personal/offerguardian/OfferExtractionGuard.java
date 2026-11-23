@@ -13,15 +13,15 @@ public final class OfferExtractionGuard {
         if(d==null)return fail("No offer details read");
         if(d.conflictingDuration)return fail("Conflicting times in the same offer card");
         if(d.minutes<=0||d.minutes>720)return fail("Duration unreadable or outside supported range");
-        if(d.metres<=0||d.metres>300000)return fail("Distance unreadable or outside supported range");
+        if(d.metres<0||d.metres>300000)return fail("Distance outside supported range");
         // A lone '1 hr' may really be '1 hr 7 min' with the minutes missed.
         if(d.hoursSeen&&!d.minutesSeen)return fail("Hours detected without a readable minute component");
         double avgKmh=d.metres*0.06/d.minutes;
-        if(avgKmh>80.0)return fail("Improbable travel speed: possible missing hour in OCR");
+        if(d.metres>0&&avgKmh>80.0)return fail("Improbable travel speed: possible missing hour in OCR");
         if("Pack & Deliver".equals(d.type)&&d.itemCount>=10&&d.minutes<20)
             return fail("Shopping order too short for item count: possible missing hour");
         if(d.pickup==null||d.pickup.trim().length()<3)
             return fail("Pickup merchant not clearly readable");
-        return new Result(true,"Duration, distance and merchant pass validation");
+        return new Result(true,"Duration and merchant pass validation; distance optional");
     }
 }

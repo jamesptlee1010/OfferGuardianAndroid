@@ -1,9 +1,7 @@
-# Install OfferGuardian v0.9.8
+# Installing OfferGuardian v0.9.9 from GitHub
 
-Extract the source ZIP. Upload its contents—not the ZIP file—to the root of your existing GitHub repository, preserving `.github/workflows/build-apk.yml` and `app/`/`tests/`. Delete nested stale sources and obsolete workflows before building. At **Actions → Build Offer Guardian APK**, run the workflow. Download the **OfferGuardian-v0.9.8-installable-APK** artifact and install its debug APK on your phone.
+Extract the source ZIP first. Upload its extracted files to your GitHub repository at the root, keeping the `.github/workflows/build-apk.yml` file and `app/` and `tests/` folders intact. Remove obsolete older source copies if needed. You cannot build directly by uploading only a ZIP into the repository.
 
-**Before removing an existing version, export your Offer History CSV.** Uninstalling deletes locally saved history and rules; GitHub debug signing keys may change between versions.
+Run **Actions → Build Offer Guardian APK** and download the `OfferGuardian-v0.9.9-installable-APK` artifact. Install the contained `OfferGuardian-v0.9.9-debug.apk` on your Android phone. Export old History before uninstalling older debug versions. On the phone, enable Accessibility and monitoring as required; use TEST ONLY to confirm correct behaviour before live auto-decline.
 
-Open Offer Rules Builder, select **1 Delivery**, enable the minimum payout and set your solo threshold, then configure separate **2 Deliveries** and **3 Deliveries** tabs. Each tab has independent payment/hourly/A$/km/maximum distance criteria and ANY/ALL. Press **Save all three delivery rule sets** to activate. The old mandatory minimum-deliveries setting does not override any of these. Count 4+, disabled tiers or unreadable headings are left for manual review.
-
-Turn on monitoring and Accessibility as usual. Keep **TEST ONLY ON** until Live Diagnostics shows correct payout, delivery count, rate and expected decline for day, night and Waze. Only then consider enabling auto-decline and disabling TEST ONLY; device-level behaviour remains unverified.
+The new time window is in Offer History → Filters and is for **display only**. Live rules use payment and/or hourly rate, independently for solo, double and triple deliveries. Distance no longer affects live decisions.

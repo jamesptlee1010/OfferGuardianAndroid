@@ -35,12 +35,12 @@ public final class OfferRulesActivity extends Activity {
     private boolean wasTiered;
 
     private static final class Draft {
-        boolean enabled=true,priceOn=true,hourOn=false,perKmOn=false,maxDistanceOn=false;
-        String price="30.00",hour="40.00",perKm="3.00",maxDistance="15.00";
+        boolean enabled=true,priceOn=true,hourOn=false;
+        String price="30.00",hour="40.00";
         OfferRuleEngine.Mode mode=OfferRuleEngine.Mode.ANY;
         OfferRuleEngine.Config config() {
             return new OfferRuleEngine.Config(priceOn,number(price),hourOn,number(hour),
-                    perKmOn,number(perKm),mode,false,1,maxDistanceOn,number(maxDistance));
+                    false,0,mode);
         }
     }
     @Override public void onCreate(Bundle state) {
@@ -52,10 +52,8 @@ public final class OfferRulesActivity extends Activity {
             // An intentionally disabled category still has its saved draft in prefs.
             if(c==null)c=readSavedConfig(i+1);
             d.enabled=fromPrefs.enabled(i+1);
-            d.priceOn=c.priceOn;d.hourOn=c.hourlyOn;d.perKmOn=c.kilometreOn;
-            d.maxDistanceOn=c.maxDistanceOn;d.mode=c.mode;
+            d.priceOn=c.priceOn;d.hourOn=c.hourlyOn;d.mode=c.mode;
             d.price=money(c.minPrice);d.hour=money(c.minHourly);
-            d.perKm=money(c.minPerKm);d.maxDistance=money(c.maxDistanceKm);
         }
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
@@ -71,12 +69,9 @@ public final class OfferRulesActivity extends Activity {
                 prefs.getFloat(Prefs.tierKey(count,"min_price"),(float)c.minPrice),
                 prefs.getBoolean(Prefs.tierKey(count,"hourly_on"),c.hourlyOn),
                 prefs.getFloat(Prefs.tierKey(count,"min_hourly"),(float)c.minHourly),
-                prefs.getBoolean(Prefs.tierKey(count,"km_on"),c.kilometreOn),
-                prefs.getFloat(Prefs.tierKey(count,"min_per_km"),(float)c.minPerKm),
+                false,0.0,
                 "ALL".equals(prefs.getString(Prefs.tierKey(count,"mode"),c.mode.name()))
-                        ?OfferRuleEngine.Mode.ALL:OfferRuleEngine.Mode.ANY,false,1,
-                prefs.getBoolean(Prefs.tierKey(count,"distance_on"),false),
-                prefs.getFloat(Prefs.tierKey(count,"max_distance"),15.0f));
+                        ?OfferRuleEngine.Mode.ALL:OfferRuleEngine.Mode.ANY,false,1,false,0.0);
     }
     private static String money(double d){return String.format(Locale.US,"%.2f",d);}
     private static double number(String s) {
@@ -112,8 +107,8 @@ public final class OfferRulesActivity extends Activity {
         header.addView(button("‹",Color.TRANSPARENT,GREEN,v->finish()),new LinearLayout.LayoutParams(dp(46),dp(48)));
         LinearLayout branding=column();header.addView(branding,new LinearLayout.LayoutParams(0,-2,1));
         branding.addView(text("Offer Guardian",23,INK,true));
-        branding.addView(text("Delivery-specific Rules Builder  ·  v0.9.8",12,MUTED,false));
-        content.addView(text("Set separate conditions for solo, double and triple offers. Only the matching category is evaluated. Enable auto-decline separately on the home screen.",13,MUTED,false),lp(-2,14));
+        branding.addView(text("Delivery-specific Rules Builder  ·  v0.9.9",12,MUTED,false));
+        content.addView(text("Set payment and hourly-rate conditions for solo, double and triple offers. Distance no longer affects live decisions. Enable auto-decline separately on the home screen.",13,MUTED,false),lp(-2,14));
         LinearLayout notice=card(content);
         notice.setBackground(shape(Color.rgb(232,248,235),Color.rgb(179,224,190),12));
         notice.addView(text(wasTiered?"● Tiered rules currently active":"○ Existing rules remain active until you save these tiers",14,GREEN,true),lp(-2,5));
@@ -163,8 +158,6 @@ public final class OfferRulesActivity extends Activity {
         box.addView(text("When disabled, offers in this category are left for manual review, not automatically declined.",12,MUTED,false),lp(-2,12));
         addMetric(box,"Minimum total payment", "A$", d.priceOn,d.price,(on,value)->{d.priceOn=on;d.price=value;refreshPreview();});
         addMetric(box,"Minimum estimated hourly rate","A$/hr",d.hourOn,d.hour,(on,value)->{d.hourOn=on;d.hour=value;refreshPreview();});
-        addMetric(box,"Minimum earnings per kilometre","A$/km",d.perKmOn,d.perKm,(on,value)->{d.perKmOn=on;d.perKm=value;refreshPreview();});
-        addMetric(box,"Maximum trip distance","km",d.maxDistanceOn,d.maxDistance,(on,value)->{d.maxDistanceOn=on;d.maxDistance=value;refreshPreview();});
         box.addView(text("HOW SHOULD THESE CONDITIONS COMBINE?",12,GREEN,true),lp(-2,6));
         RadioGroup group=new RadioGroup(this);group.setOrientation(RadioGroup.VERTICAL);
         RadioButton any=new RadioButton(this);any.setText("ANY (OR) — one active condition must pass");
@@ -230,10 +223,8 @@ public final class OfferRulesActivity extends Activity {
                     .putFloat(Prefs.tierKey(n,"min_price"),Float.isFinite((float)c.minPrice)?(float)c.minPrice:30.0f)
                     .putBoolean(Prefs.tierKey(n,"hourly_on"),d.hourOn)
                     .putFloat(Prefs.tierKey(n,"min_hourly"),Float.isFinite((float)c.minHourly)?(float)c.minHourly:40.0f)
-                    .putBoolean(Prefs.tierKey(n,"km_on"),d.perKmOn)
-                    .putFloat(Prefs.tierKey(n,"min_per_km"),Float.isFinite((float)c.minPerKm)?(float)c.minPerKm:3.0f)
-                    .putBoolean(Prefs.tierKey(n,"distance_on"),d.maxDistanceOn)
-                    .putFloat(Prefs.tierKey(n,"max_distance"),Float.isFinite((float)c.maxDistanceKm)?(float)c.maxDistanceKm:15.0f)
+                    .putBoolean(Prefs.tierKey(n,"km_on"),false)
+                    .putBoolean(Prefs.tierKey(n,"distance_on"),false)
                     .putString(Prefs.tierKey(n,"mode"),d.mode.name());
         }
         e.putBoolean(Prefs.TIERED_ACTIVE,true)

@@ -99,6 +99,41 @@ public final class OfferDetailsParser {
             }
             metricBottom=Math.max(metricBottom,bottom);
         }
+        // A live price/hourly decision must not depend on OCR successfully
+        // reading kilometres. Uber normally marks the time row with "total";
+        // use that card-local anchor when the kilometre label is absent or
+        // disconnected from the duration. Do not search arbitrary map labels.
+        if(minutes<=0)for(OfferScreenEvaluator.Line timeLine:lines) {
+            if(!timeLine.text.toLowerCase(Locale.ROOT).contains("total"))continue;
+            int cy=(timeLine.top+timeLine.bottom)/2;
+            StringBuilder combined=new StringBuilder();
+            int bottom=timeLine.bottom;
+            for(OfferScreenEvaluator.Line nearby:lines) {
+                int other=(nearby.top+nearby.bottom)/2;
+                if(Math.abs(other-cy)>54)continue;
+                if(combined.length()>0)combined.append(' ');
+                combined.append(nearby.text.trim());
+                bottom=Math.max(bottom,nearby.bottom);
+            }
+            String joined=combined.toString().replaceAll("\\s+"," ").trim();
+            Matcher h=HOURS.matcher(joined), m=MINS.matcher(joined);
+            boolean hasH=h.find(),hasM=m.find();
+            if(!hasH&&!hasM)continue;
+            int hours=0,mins=0;
+            try {if(hasH)hours=Integer.parseInt(h.group(1));
+                 if(hasM)mins=Integer.parseInt(m.group(1));}
+            catch(NumberFormatException bad){continue;}
+            minutes=hours*60+mins;parsedHours=hours;parsedMinutes=mins;
+            hoursSeen=hasH;minutesSeen=hasM;rawDuration=joined;
+            Matcher k=KM.matcher(joined);
+            if(k.find()){
+                rawDistance=k.group(0);
+                try{metres=(int)Math.round(Double.parseDouble(k.group(1).replace(',','.'))*1000);}
+                catch(NumberFormatException ignored){metres=0;}
+            }
+            metricBottom=bottom;
+            break;
+        }
         // If a km label is present but its time wasn't recognised, retain the
         // raw text for diagnostics and mark minutes unknown, never guess.
         if(metricBottom<0)for(OfferScreenEvaluator.Line line:lines) {

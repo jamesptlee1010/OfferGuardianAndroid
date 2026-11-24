@@ -3,7 +3,7 @@ package com.personal.offerguardian;
 /**
  * Screenshot-only recognition of Uber's X in a validated offer card.
  * Supports the white/green, white/black and night-mode dark/green cards,
- * including when the offer appears above Waze navigation. No fixed tap position.
+ * including different card positions in Uber Driver. No fixed tap position.
  * Inputs are normalised to the same 686x1536 used by the OCR geometry.
  */
 public final class VisualDeclineDetector {

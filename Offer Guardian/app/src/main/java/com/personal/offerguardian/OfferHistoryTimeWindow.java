@@ -6,7 +6,7 @@ import java.util.Locale;
 
 /** A local-device time-of-day filter applied to every day in the chosen date range.
  * A range such as 22:00–02:00 crosses midnight; both ends are inclusive.
- * This never affects the live Uber/Waze rules engine. */
+ * This never affects the live Uber Driver rules engine. */
 public final class OfferHistoryTimeWindow {
     public final boolean enabled;
     public final int startMinute, endMinute;

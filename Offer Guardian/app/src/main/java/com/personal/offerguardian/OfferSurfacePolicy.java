@@ -1,23 +1,18 @@
 package com.personal.offerguardian;
 
-/** Which foreground app can legitimately present an Uber offer on the device. */
+/** Only Uber Driver is permitted to trigger screenshots or decline gestures. */
 public final class OfferSurfacePolicy {
     public static final String UBER="com.ubercab.driver";
-    public static final String WAZE="com.waze";
     private OfferSurfacePolicy() {}
-    public enum Host { UBER, WAZE, OTHER }
+    public enum Host { UBER, OTHER }
     public static Host classify(String packageName) {
-        if(UBER.equals(packageName))return Host.UBER;
-        if(WAZE.equals(packageName))return Host.WAZE;
-        return Host.OTHER;
+        return UBER.equals(packageName)?Host.UBER:Host.OTHER;
     }
-    public static boolean shouldScan(Host host) {return host!=Host.OTHER;}
-    /** More rigorous safeguards for sending a gesture while a navigation app is on screen. */
+    public static boolean shouldScan(Host host) {return host==Host.UBER;}
+    /** Never dispatch a gesture for another foreground app. */
     public static boolean allowDecline(Host host,boolean cardVerified,
                                        boolean offerTextVerified,int stableFrames,
                                        double xConfidence) {
-        if(!cardVerified||xConfidence<.90)return false;
-        if(host==Host.UBER)return true;
-        return host==Host.WAZE && offerTextVerified && stableFrames>=2 && xConfidence>=.94;
+        return host==Host.UBER && cardVerified && xConfidence>=.90;
     }
 }

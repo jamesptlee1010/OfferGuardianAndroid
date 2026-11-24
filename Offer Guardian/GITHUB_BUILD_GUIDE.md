@@ -1,20 +1,9 @@
-# OfferGuardian v0.9.9 — GitHub APK Build Guide
+# OfferGuardian v0.9.14 — GitHub build guide
 
-1. Extract `OfferGuardian_v0.9.9_Time_Filter_Faster_Price_Hourly_Source.zip`.
-2. Upload the **extracted files**, preserving folders, to the **root** of your GitHub repository. The web uploader does not extract ZIP files. `.github/workflows/build-apk.yml` must remain in that exact folder.
-3. Remove old nested copies and obsolete workflows so GitHub selects the current source. Check `app/build.gradle` has `versionName '0.9.9'` and `versionCode 18`.
-4. Open **Actions → Build Offer Guardian APK → Run workflow** (or allow push-triggered build).
-5. Once the action finishes green, download the `OfferGuardian-v0.9.9-installable-APK` artifact and install `OfferGuardian-v0.9.9-debug.apk` inside it.
+The source now monitors only Uber Driver while the Uber Driver app is foreground. Idle Uber polling remains at approximately 1.7 seconds; bounded fast re-reads remain for active offer verification.
 
-The workflow runs host-side regression checks, sets up Java 17, Android SDK 35 and Gradle 8.9, compiles the APK, checks its version, and publishes an installable artifact. No APK has been compiled locally.
+Extract the ZIP and upload its contents to the root of your repository, preserving `.github` and other folders. The GitHub workflow expands `tests_bundle.zip` automatically, runs host-side checks, and builds an installable debug APK.
 
-**Before uninstalling any previous version, export Offer History to CSV.** Debug builds may have different signing certificates and might require uninstalling, which erases local settings/history.
+**Delete obsolete Waze source files and older nested projects from your existing GitHub repository.** The latest source is versionName `0.9.14`, versionCode `22`.
 
-After installation, check your three delivery-specific payout/hourly settings. In History, open **Filters** and use the optional **Time of day** section. Start with TEST ONLY before enabling automatic declines, especially when Waze is foreground.
-
-## v0.9.11
-This ZIP includes the full source tree (not an APK). Upload the **extracted files** to your GitHub repository, preserving `.github/workflows/build-apk.yml`, then run the Build Offer Guardian APK workflow. Do not upload the ZIP as a single GitHub repository file. Update your existing source files rather than nesting a second project inside the repository.
-
-
-### v0.9.12 browser upload
-Extract the GitHub-source ZIP on your computer and upload its contents, preserving the `.github` folder. Regression tests are retained in `tests_bundle.zip` so this source archive stays below GitHub's 100-file browser-upload limit. GitHub Actions extracts that bundle automatically before verifying the source tree. Do not upload the outer ZIP as a single repository file.
+Export History before uninstalling a previously installed APK. After installing, begin with TEST ONLY and test actual Uber Driver foreground behaviour.

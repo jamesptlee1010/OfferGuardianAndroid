@@ -26,8 +26,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.CodingErrorAction;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Calendar;
@@ -43,6 +47,7 @@ public final class OfferHistoryActivity extends Activity {
     private static final int BG=Color.rgb(247,250,247);
     private static final int BORDER=Color.rgb(224,231,226);
     private static final int REQUEST_CSV=102;
+    private static final int REQUEST_IMPORT_CSV=103;
     private OfferHistoryStore store;
     private LinearLayout root,results,tabs,summary,averages,deliveryFilterRow,matchRateRow,weekdayRow,periodRow;
     private int periodScrollX=0;
@@ -107,7 +112,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.12",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.14",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 
@@ -162,12 +167,14 @@ public final class OfferHistoryActivity extends Activity {
         filterSummary.setBackground(bg(Color.rgb(231,247,234),0,9));
         root.addView(filterSummary,box(-2,11));
 
-        LinearLayout actions=row();root.addView(actions,box(-2,14));
-        TextView export=softButton("↓ Export all CSV",v->exportCsv());
+        LinearLayout actions=row();root.addView(actions,box(-2,7));
+        TextView export=softButton("↓ Export CSV",v->exportCsv());
         actions.addView(export,new LinearLayout.LayoutParams(0,dp(43),1));
+        TextView importButton=softButton("↑ Import History",v->importCsv());
+        LinearLayout.LayoutParams importLp=new LinearLayout.LayoutParams(0,dp(43),1);
+        importLp.leftMargin=dp(9);actions.addView(importButton,importLp);
         TextView wipe=softButton("Clear history",v->confirmClear());
-        LinearLayout.LayoutParams wipeLp=new LinearLayout.LayoutParams(0,dp(43),1);wipeLp.leftMargin=dp(10);
-        actions.addView(wipe,wipeLp);
+        root.addView(wipe,box(42,14));
         results=col();root.addView(results,box(-2,8));
         addLine(root,"Payout, kilometres and hourly rates are estimates from Uber’s offer card at request time, not final earnings or actual travel. Accepted/declined outcomes can be marked manually; unconfirmed outcomes remain Unknown. History stays on this phone. Press and hold an offer card to delete that record.",11,GRAY,false,0);
         refreshList();
@@ -689,10 +696,59 @@ public final class OfferHistoryActivity extends Activity {
             new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date())+".csv");
         startActivityForResult(intent,REQUEST_CSV);
     }
+    private void importCsv() {
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        // Some Android file providers label CSV as application/octet-stream.
+        // Allow selection, then validate the OfferGuardian CSV header in the importer.
+        startActivityForResult(intent,REQUEST_IMPORT_CSV);
+    }
+    private void readImportedCsv(Uri uri) {
+        Toast.makeText(this,"Importing offer history…",Toast.LENGTH_SHORT).show();
+        final android.content.Context app=getApplicationContext();
+        new Thread(()->{
+            OfferHistoryStore importStore=new OfferHistoryStore(app);
+            try(InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new java.io.IOException("Could not open selected CSV");
+                Reader reader=new InputStreamReader(in,StandardCharsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT));
+                OfferHistoryStore.ImportSummary summary=importStore.importCsv(reader);
+                runOnUiThread(()->{
+                    if(isFinishing()||isDestroyed())return;
+                    if(summary.imported>0) {
+                        dateRange="ALL"; // Imported historic records may pre-date today.
+                        selectedTab="ALL";
+                        visible=35;
+                        refreshList();
+                    }
+                    new AlertDialog.Builder(this)
+                        .setTitle("History import complete")
+                        .setMessage(summary.imported+" offers imported\n"+
+                                summary.duplicates+" duplicates skipped\n"+
+                                summary.invalid+" invalid rows skipped\n\n"+
+                                "The original offer dates and outcomes were preserved. "+
+                                "Imported legacy hourly rates remain unverified. "+
+                                "Other active History filters may still hide some imported offers.")
+                        .setPositiveButton("OK",null).show();
+                });
+            } catch(Exception error) {
+                String message=error.getMessage()==null?"Unable to read this CSV":error.getMessage();
+                runOnUiThread(()->{
+                    if(isFinishing()||isDestroyed())return;
+                    new AlertDialog.Builder(this).setTitle("History import unsuccessful")
+                        .setMessage("No partial import was saved. "+message)
+                        .setPositiveButton("OK",null).show();
+                });
+            } finally {importStore.close();}
+        },"OfferGuardian-History-Import").start();
+    }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
-        if(request!=REQUEST_CSV||result!=RESULT_OK||data==null||data.getData()==null)return;
+        if(result!=RESULT_OK||data==null||data.getData()==null)return;
         Uri uri=data.getData();
+        if(request==REQUEST_IMPORT_CSV) {readImportedCsv(uri);return;}
+        if(request!=REQUEST_CSV)return;
         try(OutputStream stream=getContentResolver().openOutputStream(uri)) {
             if(stream==null)throw new IllegalStateException("Unable to open selected file");
             stream.write(store.csv().getBytes(StandardCharsets.UTF_8));

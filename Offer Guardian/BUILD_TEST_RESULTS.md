@@ -1,20 +1,14 @@
-# OfferGuardian v0.9.12 — build and test results
+# OfferGuardian v0.9.14 — Local verification
 
-## Changes implemented
-- Single-select weekday chips (All / Monday–Sunday), with tap-again deselection.
-- Multi-select and tappable All / Morning / Lunch / Afternoon / Evening / Night filters.
-- Exact non-overlapping local time boundaries: 06:00, 11:00, 14:00, 17:00 and 21:30; Night spans midnight to 06:00.
-- SQLite queries apply weekday and selected periods to the History offer list, summary statistics and match-percentage denominator while preserving existing date range, advanced filter, delivery-count filter and sort options.
-- Filter preferences persist locally between visits; Clear History Filters resets them.
-- Long-pressing a History offer opens a confirmation and deletes only that database record, refreshing all statistics.
-- GitHub build workflow expands bundled regression tests to keep the browser-upload source archive under 100 files.
+- Base: v0.9.13 Import History source ZIP.
+- Removed `com.waze` Android package queries, accessibility events, and UI references.
+- Removed navigation-specific scanning, WazeFastVerifier, its dedicated test, and Waze-only gesture verification paths.
+- Retained Uber Driver monitoring (1700 ms normal polling) and bounded 430 ms active-offer OCR retries.
+- All 25 GitHub workflow host-side check steps passed locally with updated tests.
+- Confirmed the navigation package classifies as OTHER, never as an allowed scan/decline host.
+- Preserved History import/export, filters, sorting, tiered rules and existing OCR checks.
+- Android SDK/Gradle are unavailable locally: Android APK compilation and phone testing remain outstanding.
 
-## Verified in this environment
-- Existing 24 host-side regression/check steps passed, including OCR, Faster Waze, offer-duration, tiered rules, History filters, delivery count, statistics, and overlay tests.
-- 1,480 assertions in OfferHistoryTimeWindowStandaloneTest (including exhaustive 1,440-minute no-gap/no-overlap schedule checks) passed.
-- 14 SQLite time/filter scenarios passed, including Monday vs Tuesday, Sunday, all five shifts and overnight local-time boundaries.
-- Java syntax parsing passed for OfferHistoryActivity, OfferHistoryStore, OfferHistoryTimeWindow and MainActivity.
-- Release ZIP and bundled tests both passed archive integrity and source-tree checks; packaged workflow extracted test bundle successfully and reran the targeted tests.
+## Important GitHub upgrade step
 
-## Not verified here
-- Android APK compilation and on-device behaviour (Android SDK/Gradle are not available in this environment). Use GitHub Actions for APK compilation and test the History controls on your phone.
+Browser uploads do not delete old files. If your existing repository still has `WazeFastVerifier.java`, delete that file separately. The v0.9.14 archive itself does not include it.

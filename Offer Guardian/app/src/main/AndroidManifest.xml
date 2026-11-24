@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <queries>
         <package android:name="com.ubercab.driver" />
-        <package android:name="com.waze" />
     </queries>
     <application
         android:allowBackup="false"
@@ -29,7 +28,7 @@
             android:name=".OfferAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true"
-            android:label="Offer Guardian – Uber/Waze offer monitor">
+            android:label="Offer Guardian – Uber Driver monitor">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>

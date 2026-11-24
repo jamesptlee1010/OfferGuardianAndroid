@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Locale;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.io.Reader;
+import java.io.IOException;
 
 /** Private on-device offer history; no account sync or network permission. */
 public final class OfferHistoryStore extends SQLiteOpenHelper {
@@ -228,6 +230,67 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         return id>0 && getWritableDatabase().delete(TABLE,"id=?",new String[]{Long.toString(id)})==1;
     }
     public synchronized void clearAll() {getWritableDatabase().delete(TABLE,null,null);}
+    public static final class ImportSummary {
+        public int imported, duplicates, invalid, processed;
+    }
+
+    /** Merge a History CSV without erasing local rows. The entire file is
+     * applied in one SQLite transaction; a broken CSV rolls back all inserts.
+     * Duplicate matching deliberately ignores OCR quality and outcomes, as
+     * these can differ between two exports of the SAME offer.
+     */
+    public synchronized ImportSummary importCsv(Reader input) throws IOException {
+        final ImportSummary summary=new ImportSummary();
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            OfferHistoryCsvImport.Report read=OfferHistoryCsvImport.read(input,entry->{
+                final boolean blankAddress=entry.pickup.isEmpty()&&entry.destination.isEmpty();
+                // Export timestamps have second precision, while local rows have millis.
+                // Compare within the same second to avoid duplicating still-local offers.
+                String where="seen_at>=? AND seen_at<? AND payout_cents=? AND pickup=? AND destination=?"+
+                    (blankAddress?" AND type=?":"");
+                String[] keys=blankAddress?
+                    new String[]{Long.toString(entry.seenAt),Long.toString(entry.seenAt+1000),Integer.toString(entry.payoutCents),
+                        entry.pickup,entry.destination,entry.type}:
+                    new String[]{Long.toString(entry.seenAt),Long.toString(entry.seenAt+1000),Integer.toString(entry.payoutCents),
+                        entry.pickup,entry.destination};
+                try(Cursor found=db.query(TABLE,new String[]{"id"},where,keys,
+                        null,null,null,"1")) {
+                    if(found.moveToFirst()) {
+                        summary.duplicates++;
+                        return;
+                    }
+                }
+                ContentValues values=new ContentValues();
+                values.put("seen_at",entry.seenAt);
+                values.put("payout_cents",entry.payoutCents);
+                values.put("type",entry.type);
+                values.put("delivery_count",entry.deliveryCount);
+                values.put("pickup",entry.pickup);
+                values.put("destination",entry.destination);
+                values.put("minutes",entry.minutes);
+                values.put("metres",entry.metres);
+                values.put("outcome",entry.outcome);
+                values.put("action",entry.action);
+                values.put("raw_payout",entry.rawPayout);
+                values.put("raw_duration",entry.rawDuration);
+                values.put("raw_distance",entry.rawDistance);
+                values.put("extraction_status",entry.extractionStatus);
+                values.put("extraction_note",entry.extractionNote);
+                values.put("verified_frames",entry.verifiedFrames);
+                values.put("parsed_hours",entry.parsedHours);
+                values.put("parsed_minutes",entry.parsedMinutes);
+                db.insertOrThrow(TABLE,null,values);
+                summary.imported++;
+            });
+            summary.processed=read.rows;
+            summary.invalid=read.invalid;
+            db.setTransactionSuccessful();
+        } finally {db.endTransaction();}
+        return summary;
+    }
+
 
     private Item parse(Cursor cur) {
         Item o=new Item();o.id=cur.getLong(0);o.seenAt=cur.getLong(1);

@@ -74,7 +74,7 @@ public final class OfferScreenEvaluator {
     /**
      * When a navigation app owns the foreground, validate that the visible
      * content really belongs to an Uber delivery offer before allowing an X tap.
-     * A visual match and one price alone are not enough on Waze.
+     * A visual match and one price alone are not enough to confirm an offer.
      */
     public static boolean hasOfferIdentity(VisualDeclineDetector.Match visual,List<Line> lines) {
         if(visual==null||!visual.found||lines==null)return false;

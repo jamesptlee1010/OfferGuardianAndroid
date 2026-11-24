@@ -1,9 +1,9 @@
-# Offer Guardian v0.9.12
+# Offer Guardian v0.9.12 — History weekday/period filters and per-offer deletion
 
-- Low Resource Mode defaults to on (Uber Driver only). When off, the existing Uber/Waze scanning and verification path remains available.
-- Low mode narrows accessibility events to Uber Driver, ignores unrelated content changes, reduces idle visual screenshots (minimum interval 3200 ms rather than 1450 ms), and uses offer/window hints to trigger faster scans. Fast confirmation and existing decline verification remain in place. Periodic fallback is necessary because Uber does not reliably expose all offers as accessibility events. First detection of an eventless offer may be slower; compare in TEST ONLY on the device.
-- No screenshots when another app is foreground or the screen is off. No periodic monitoring when disabled. OCR recognizer released after sustained time outside supported foreground (low mode); it is lazily recreated. Repeated identical status writes are suppressed in low mode. Hardware screenshot wrapper is released promptly.
-- Performance settings provides manual process PSS, average CPU use (relative to one core), scan rate, and screenshot request count. No continuous diagnostics sampler. Tap once, run the test, return and tap again.
-- History uses 35-row pages (unlimited navigation), with all-matching summary calculations preserved. Search debounced; initial redundant refresh removed.
-- History Import CSV merges backups, skips matching timestamp/payout/type/pickup/destination records and does not overwrite existing outcomes. Invalid CSV rolls back the import. Legacy exports use local timestamp to second precision and rounded km; current exports include exact epoch milliseconds and metres. Import/export streams in a worker thread, not a whole-file in-memory string. No database schema change.
-- No new location permission; GPS reliability and battery/CPU reductions need real-device verification.
+- Added one-tap weekday selection (Monday through Sunday) plus All. One weekday active; a second tap clears it.
+- Added independent, multi-select Morning (06:00–11:00), Lunch (11:00–14:00), Afternoon (14:00–17:00), Evening (17:00–21:30) and Night (21:30–06:00) chips.
+- Uses local phone time and precise non-overlapping half-open boundaries. Overnight offers use the actual received date and weekday.
+- Applies the new filters to History lists, summary statistics, and the filtering percentage denominator; supports existing date/time/advanced filters/sort/delivery-count filters.
+- Press and hold a historical offer for a single-record delete action with confirmation. History statistics refresh on successful deletion.
+- Remembers weekday and shift selections locally between visits. No changes to automatic-decline logic.
+- Includes host-side schedule tests and SQLite boundary/integration tests, plus bundled regression tests for GitHub uploads under 100 files.

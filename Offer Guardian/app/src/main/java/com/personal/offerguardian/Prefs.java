@@ -7,7 +7,6 @@ import android.content.SharedPreferences;
 final class Prefs {
     private Prefs() {}
     private static final String NAME = "offer_guardian_prefs";
-    static final String LOW_RESOURCE = "low_resource_v0912";
     static final String MONITOR = "monitor";
     static final String OVERLAY_ENABLED = "qualifying_overlay_enabled";
     static final String ACCEPT_TRACKING = "accept_tracking_enabled";

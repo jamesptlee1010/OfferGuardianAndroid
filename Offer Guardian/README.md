@@ -1,4 +1,4 @@
-# OfferGuardian v0.9.12 — Low Resource Mode and History Backup
+# OfferGuardian v0.9.9 — Time-of-Day Offer History & Simplified Price/Hourly Rules
 
 **Complete Android GitHub-ready source project, not a compiled APK.** Built on the v0.9.8 tiered-delivery version. Retains Faster Waze, independent 1/2/3-delivery rules, History filtering/sorting, diagnostics and existing safety gates.
 
@@ -28,7 +28,7 @@ The price-only fast path needs two agreeing payout/count/merchant/X frames; it d
 
 1. Extract this ZIP on your computer; upload its *contents* to the root of your existing GitHub repository, preserving `.github/workflows/build-apk.yml` and the folder hierarchy. Uploading the ZIP as one file does not build it.
 2. Remove obsolete nested copies of old source trees/workflows. Keep the new `app/build.gradle`, `tests` and workflow files together.
-3. Open GitHub **Actions → Build Offer Guardian APK → Run workflow**. When the Android compile succeeds, download the `OfferGuardian-v0.9.12-installable-APK` artifact and install its debug APK.
+3. Open GitHub **Actions → Build Offer Guardian APK → Run workflow**. When the Android compile succeeds, download the `OfferGuardian-v0.9.9-installable-APK` artifact and install its debug APK.
 4. **Export existing Offer History to CSV before uninstalling** a previous version; uninstalling deletes local history. Debug APK signing keys can change across GitHub runs, which may prevent an in-place update.
 5. Check each delivery-tier setting and save. Keep **TEST ONLY** enabled while checking live OCR and Waze. Enable real auto-decline only after successful on-device testing.
 
@@ -47,5 +47,11 @@ Host-side Java/SQLite regression checks are included in the workflow. They cover
 - When a qualifying filter or search is active, show the percentage of matching offers over all offers in the chosen date/time window.
 - The live Uber/Waze rule engine remains unchanged.
 
-## v0.9.12
-See [CHANGELOG](CHANGELOG_v0.9.12.md) and [build guide](GITHUB_BUILD_GUIDE.md). Low Resource Mode is enabled by default. Export CSV before uninstalling; restore using Import CSV in Offer History.
+
+## v0.9.12 — weekday and shift quick filters, single-offer deletion
+- Offer History: weekday row (All, M, T, W, T, F, S, S) selects one weekday; tapping it again resets to All.
+- Multi-select time periods: Morning 06:00–11:00, Lunch 11:00–14:00, Afternoon 14:00–17:00, Evening 17:00–21:30, Night 21:30–06:00. Boundaries are half-open, so a request at 11:00 belongs to Lunch, not Morning.
+- Periods combine by OR, weekday/date/time filters combine by AND with other History criteria. An offer at 01:00 Tuesday is counted as Tuesday Night.
+- Long-press any History card to open a confirmation to permanently delete that one record. Data/averages/match-rate refresh after deletion.
+- Auto-decline, tiered rules, Faster Waze, OCR and previously saved History records remain unchanged.
+- For easier GitHub web uploading, the release ZIP contains `tests_bundle.zip`, which GitHub Actions expands automatically before testing and compiling the APK.

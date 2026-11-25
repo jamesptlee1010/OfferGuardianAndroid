@@ -1,10 +1,10 @@
-# Install OfferGuardian v0.9.14 — Uber Driver only
+# Install OfferGuardian v0.9.15 — Uber-only scanner watchdog
 
-1. Extract `OfferGuardian_v0.9.14_Uber_Only_Source.zip` on your computer.
-2. Upload its contents to the root of your existing GitHub repository, preserving `.github/workflows/build-apk.yml`, `app/`, `tests_bundle.zip`, and the Gradle project files.
-3. Delete any obsolete source files left in the existing repository, especially `app/src/main/java/com/personal/offerguardian/WazeFastVerifier.java`; merely uploading updated files does not delete old ones.
-4. In **Actions**, run **Build Offer Guardian APK** and download the installable APK artifact.
-5. Install over the existing app if signing permits. Export Offer History before uninstalling, because uninstalling clears local History.
-6. Start in **TEST ONLY**. This version deliberately does **not** scan or decline offers when Waze or any other application is foreground.
+1. Extract `OfferGuardian_v0.9.15_Uber_Only_Watchdog_Source.zip` on a computer.
+2. Upload the **files and directories inside** the ZIP into the root of your GitHub repository. Preserve `.github`, `app`, `tests_bundle.zip` and Gradle files. Do not upload just the ZIP to GitHub as it is not expanded automatically.
+3. Remove obsolete Waze source files and duplicate old-version project trees left behind by earlier uploads. In particular, delete `app/src/main/java/com/personal/offerguardian/WazeFastVerifier.java` if it still exists in the repository.
+4. Run **Actions → Build Offer Guardian APK**; download its debug APK artifact.
+5. Export your current Offer History before uninstalling an earlier build. Try to update in place; a different debug signing key may require uninstall/reinstall.
+6. Initially enable **TEST ONLY**, monitor the app for longer than the earlier 10–15 minute failure, and use **Copy diagnostics for troubleshooting** if detection stops again.
 
-This is the Android **source ZIP**, not a precompiled APK. Compile it in GitHub and verify it on your phone.
+The Monitor Health heartbeat helps distinguish a scanner stall from an Android-stopped Accessibility service. If Android disables Accessibility, it must be enabled by the user. This is source code, not a compiled APK.

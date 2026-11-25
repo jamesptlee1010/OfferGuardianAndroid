@@ -1,5 +1,7 @@
-# Replace an earlier OfferGuardian source version with v0.9.9
+# Replace existing OfferGuardian source with v0.9.15
 
-Extract the v0.9.9 ZIP and upload the contents to the root of your existing GitHub repository, preserving paths. Replace existing files with matching paths and remove old nested complete projects and extra workflows so there is only one active build tree. GitHub won't extract a ZIP uploaded as a single file. The repo should contain `settings.gradle`, `app/build.gradle`, `app/src`, `tests`, and `.github/workflows/build-apk.yml` at the correct levels.
+Extract the v0.9.15 ZIP and upload its **contents** to the root of your existing GitHub repository, preserving paths and hidden `.github` files. Replace matching existing files. GitHub does **not** extract a source ZIP uploaded as one file and does **not** delete files no longer present in the new release.
 
-The included workflow searches for a complete v0.9.9 project, executes host-side tests, compiles an Android debug APK and uploads it as an artifact. Export History before uninstalling a previous APK; in-place installation may be blocked by different debug-signing keys. Use TEST ONLY before enabling live auto-decline.
+Delete obsolete `WazeFastVerifier.java` if present and remove old nested full copies of the app and duplicate workflows. Keep one project containing `settings.gradle`, `app/build.gradle`, `app/src`, `tests_bundle.zip` and `.github/workflows/build-apk.yml`.
+
+The included workflow extracts the bundled tests, performs host-side checks and builds the Android debug APK. **Export History before uninstalling an existing APK**; debug signing keys may differ. Start with **TEST ONLY** and verify the heartbeat stays current during a prolonged monitoring session.

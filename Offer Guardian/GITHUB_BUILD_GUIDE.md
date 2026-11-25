@@ -1,9 +1,12 @@
-# OfferGuardian v0.9.14 — GitHub build guide
+# OfferGuardian v0.9.15 — GitHub build guide
 
-The source now monitors only Uber Driver while the Uber Driver app is foreground. Idle Uber polling remains at approximately 1.7 seconds; bounded fast re-reads remain for active offer verification.
+The source monitors only Uber Driver when Uber Driver is foreground. It retains ~1.7 s idle scanning and 430 ms bounded offer verification retries. The 8-second watchdog monitors the existing pipeline and adds no new screenshot polling loop.
 
-Extract the ZIP and upload its contents to the root of your repository, preserving `.github` and other folders. The GitHub workflow expands `tests_bundle.zip` automatically, runs host-side checks, and builds an installable debug APK.
+1. Extract `OfferGuardian_v0.9.15_Uber_Only_Watchdog_Source.zip` on your computer.
+2. Upload its *extracted contents* to the repository root, preserving `.github/workflows/build-apk.yml`, `app/`, `tests_bundle.zip`, `settings.gradle`, and `build.gradle`.
+3. Remove outdated nested complete copies of earlier projects and any obsolete Waze source from your existing repository; GitHub browser upload does not remove old files. Keep only one active build workflow.
+4. Open **Actions → Build Offer Guardian APK → Run workflow**.
+5. Download the APK artifact. Export History before uninstalling; installing an APK signed with a different debug key may require an uninstall.
+6. Begin with **TEST ONLY**, check Monitor Health/diagnostics and test on real Uber Driver offer screens while safely parked.
 
-**Delete obsolete Waze source files and older nested projects from your existing GitHub repository.** The latest source is versionName `0.9.14`, versionCode `22`.
-
-Export History before uninstalling a previously installed APK. After installing, begin with TEST ONLY and test actual Uber Driver foreground behaviour.
+Version: `versionName 0.9.15`, `versionCode 23`. The workflow runs 26 host-side checks including scanner timeout/callback safety, then compiles Android using its SDK. Android APK compilation and prolonged phone testing were not available locally.

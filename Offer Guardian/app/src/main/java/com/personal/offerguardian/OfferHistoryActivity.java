@@ -112,7 +112,7 @@ public final class OfferHistoryActivity extends Activity {
         heading.addView(back,new LinearLayout.LayoutParams(dp(38),dp(50)));
         LinearLayout titleCol=col();heading.addView(titleCol,new LinearLayout.LayoutParams(0,-2,1));
         addLine(titleCol,"Offer Guardian",23,DARK,true,0);
-        addLine(titleCol,"Offer History  ·  v0.9.14",12,GRAY,false,0);
+        addLine(titleCol,"Offer History  ·  v0.9.15",12,GRAY,false,0);
         headerSub=label("",12,GRAY,false);
         root.addView(headerSub,box(-2,16));
 

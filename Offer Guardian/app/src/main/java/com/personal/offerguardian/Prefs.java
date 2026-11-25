@@ -56,6 +56,11 @@ final class Prefs {
     static final String LIVE_STATUS = "live_status";
     static final String LIVE_TIME = "live_time";
     static final String DIAG_HISTORY = "diagnostic_history";
+    static final String HEALTH_HEARTBEAT_TIME = "health_heartbeat_time";
+    static final String HEALTH_SERVICE_ACTIVE = "health_service_active";
+    static final String HEALTH_RECOVERIES = "health_recoveries";
+    static final String HEALTH_SCREENSHOTS = "health_screenshots";
+    static final String HEALTH_STATE = "health_monitor_state";
     static final String MIGRATED_V03 = "migrated_v03";
     static final String MIGRATED_V04 = "migrated_v04";
     static final String LAST_STATUS = "last_status";

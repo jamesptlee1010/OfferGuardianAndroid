@@ -1,14 +1,10 @@
-# OfferGuardian v0.9.14 — Local verification
+# OfferGuardian v0.9.15 — Local verification
 
-- Base: v0.9.13 Import History source ZIP.
-- Removed `com.waze` Android package queries, accessibility events, and UI references.
-- Removed navigation-specific scanning, WazeFastVerifier, its dedicated test, and Waze-only gesture verification paths.
-- Retained Uber Driver monitoring (1700 ms normal polling) and bounded 430 ms active-offer OCR retries.
-- All 25 GitHub workflow host-side check steps passed locally with updated tests.
-- Confirmed the navigation package classifies as OTHER, never as an allowed scan/decline host.
-- Preserved History import/export, filters, sorting, tiered rules and existing OCR checks.
-- Android SDK/Gradle are unavailable locally: Android APK compilation and phone testing remain outstanding.
-
-## Important GitHub upgrade step
-
-Browser uploads do not delete old files. If your existing repository still has `WazeFastVerifier.java`, delete that file separately. The v0.9.14 archive itself does not include it.
+- Base: `OfferGuardian_v0.9.14_Uber_Only_Source.zip` (latest prior project).
+- Added `OfferScanWatchdog.java` and a standalone host test with **18 assertions passed** covering timeouts, fresh tokens, late callback rejection and service invalidation.
+- Replaced the indefinite screenshot/OCR `capturing` flag with capture tokens; late task completion cannot reset the busy state of a newer scan. A capture older than **8,000 ms** is invalidated; partial offer verification is discarded before scanning resumes.
+- Added a periodic (~45 second) monitor heartbeat, monitor health UI, watchdog recovery counts and Android foreground/accessibility state diagnostics; no additional polling service or screenshot loop.
+- **All 26/26 available host-side GitHub workflow checks passed locally**, including previous history, import, OCR, delivery-count, rules, SQLite, overlay and Uber-only scanning checks.
+- GitHub workflow updated for `versionName 0.9.15`, `versionCode 23` and new watchdog test; APK metadata validation now expects 0.9.15.
+- **Android APK compilation was not performed locally:** the Android SDK/Gradle are unavailable in this environment. Test the GitHub-built APK on the phone for longer than the former 10–15 minute failure period.
+- Caveat: Android may suspend or disable Accessibility independently; an app cannot silently re-enable a disabled service. A stale heartbeat helps distinguish this from a scanner timeout.

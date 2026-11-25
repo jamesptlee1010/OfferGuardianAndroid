@@ -1,10 +1,7 @@
-# Install OfferGuardian v0.9.15 — Uber-only scanner watchdog
-
-1. Extract `OfferGuardian_v0.9.15_Uber_Only_Watchdog_Source.zip` on a computer.
-2. Upload the **files and directories inside** the ZIP into the root of your GitHub repository. Preserve `.github`, `app`, `tests_bundle.zip` and Gradle files. Do not upload just the ZIP to GitHub as it is not expanded automatically.
-3. Remove obsolete Waze source files and duplicate old-version project trees left behind by earlier uploads. In particular, delete `app/src/main/java/com/personal/offerguardian/WazeFastVerifier.java` if it still exists in the repository.
-4. Run **Actions → Build Offer Guardian APK**; download its debug APK artifact.
-5. Export your current Offer History before uninstalling an earlier build. Try to update in place; a different debug signing key may require uninstall/reinstall.
-6. Initially enable **TEST ONLY**, monitor the app for longer than the earlier 10–15 minute failure, and use **Copy diagnostics for troubleshooting** if detection stops again.
-
-The Monitor Health heartbeat helps distinguish a scanner stall from an Android-stopped Accessibility service. If Android disables Accessibility, it must be enabled by the user. This is source code, not a compiled APK.
+# GitHub build guide — Offer Guardian 2.1.0
+1. Extract `OfferGuardian_v2.1.0_Quick_Controls_Source.zip`.
+2. Replace the repository root with the extracted contents. Include hidden `.github/workflows/build-apk.yml`. The small `tests_bundle.zip` is automatically expanded by Actions; do not expand it before browser upload.
+3. Remove redundant old source copies and workflows. Do not delete any signing configuration used for your installed app.
+4. In GitHub select Actions → Build Offer Guardian APK → Run workflow. The workflow runs host regression checks and compiles the debug APK with the Android SDK.
+5. Download the `OfferGuardian-v2.1.0-installable-APK` artifact, extract the APK, and install. Export History first; different debug signing keys may prevent an in-place upgrade.
+6. Follow README test-only and live test instructions before enabling automatic declines. Android compilation and device testing are not yet verified locally.

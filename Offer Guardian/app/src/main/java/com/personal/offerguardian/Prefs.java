@@ -8,6 +8,19 @@ final class Prefs {
     private Prefs() {}
     private static final String NAME = "offer_guardian_prefs";
     static final String MONITOR = "monitor";
+    static final String QUICK_CONTROLS = "quick_controls_v21";
+    static final String UBER_ENABLED="uber_enabled_v2", DASH_ENABLED="dash_enabled_v2";
+    static final String DASH_DRY="dash_dry_run_v2", DASH_SEPARATE="dash_separate_rules_v2";
+    static final String AUTO_SWITCH="dash_auto_switch_v2", AUTO_RETURN="dash_auto_return_v2";
+    static final String DASH_NOTICE="dash_notice_v2";
+    static SharedPreferences dashRules(Context context) {
+        return context.getSharedPreferences("guardian_dash_rules_v2",Context.MODE_PRIVATE);
+    }
+    static SharedPreferences rulesFor(Context context, boolean dash) {
+        SharedPreferences p=of(context);
+        SharedPreferences d=dashRules(context);
+        return dash&&p.getBoolean(DASH_SEPARATE,false)&&tieredEnabled(d)?d:p;
+    }
     static final String OVERLAY_ENABLED = "qualifying_overlay_enabled";
     static final String ACCEPT_TRACKING = "accept_tracking_enabled";
     static final String MIGRATED_V08 = "migrated_v08";

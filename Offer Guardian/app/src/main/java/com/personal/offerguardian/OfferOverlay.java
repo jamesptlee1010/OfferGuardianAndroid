@@ -33,13 +33,15 @@ final class OfferOverlay {
     private int dp(float n) {return Math.round(service.getResources().getDisplayMetrics().density*n);}
 
     /** Show only after the rule engine has returned SHOW. */
-    boolean show(double hourly,double km) {
+    boolean show(double hourly,double km) {return show(hourly,km,false);}
+    boolean show(double hourly,double km,boolean dash) {
         if(wm==null) return false;
         String hour=Double.isFinite(hourly) && hourly>0
                 ?String.format(Locale.US,"$%.2f/hr",hourly):"—/hr";
         String distance=Double.isFinite(km) && km>0
                 ?String.format(Locale.US,"$%.2f/km",km):"—/km";
-        String label=hour+"\n"+distance;
+        String label=(dash?"DoorDash":"Uber")+"\n"+hour+"\n"+distance;
+        if(panel!=null&&!currentText.startsWith(dash?"DoorDash":"Uber"))hide();
         if(panel!=null && label.equals(currentText)) return true;
         try {
             if(panel==null) {
@@ -78,13 +80,13 @@ final class OfferOverlay {
                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|
                         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                         PixelFormat.TRANSLUCENT);
-                p.gravity=Gravity.TOP|Gravity.RIGHT;
+                p.gravity=Gravity.TOP|(dash?Gravity.CENTER_HORIZONTAL:Gravity.RIGHT);
                 p.x=dp(8);
-                p.y=dp(10);
+                p.y=dp(dash?65:10);
                 p.setTitle("Offer Guardian estimated rates");
                 wm.addView(panel,p);
             }
-            perHour.setText(hour);
+            perHour.setText((dash?"DD · ":"")+hour);
             perKm.setText(distance);
             currentText=label;
             return true;

@@ -1,7 +1,7 @@
-# Replace existing OfferGuardian source with v0.9.15
-
-Extract the v0.9.15 ZIP and upload its **contents** to the root of your existing GitHub repository, preserving paths and hidden `.github` files. Replace matching existing files. GitHub does **not** extract a source ZIP uploaded as one file and does **not** delete files no longer present in the new release.
-
-Delete obsolete `WazeFastVerifier.java` if present and remove old nested full copies of the app and duplicate workflows. Keep one project containing `settings.gradle`, `app/build.gradle`, `app/src`, `tests_bundle.zip` and `.github/workflows/build-apk.yml`.
-
-The included workflow extracts the bundled tests, performs host-side checks and builds the Android debug APK. **Export History before uninstalling an existing APK**; debug signing keys may differ. Start with **TEST ONLY** and verify the heartbeat stays current during a prolonged monitoring session.
+# GitHub build guide — Offer Guardian 2.1.0
+1. Extract `OfferGuardian_v2.1.0_Quick_Controls_Source.zip`.
+2. Replace the repository root with the extracted contents. Include hidden `.github/workflows/build-apk.yml`. The small `tests_bundle.zip` is automatically expanded by Actions; do not expand it before browser upload.
+3. Remove redundant old source copies and workflows. Do not delete any signing configuration used for your installed app.
+4. In GitHub select Actions → Build Offer Guardian APK → Run workflow. The workflow runs host regression checks and compiles the debug APK with the Android SDK.
+5. Download the `OfferGuardian-v2.1.0-installable-APK` artifact, extract the APK, and install. Export History first; different debug signing keys may prevent an in-place upgrade.
+6. Follow README test-only and live test instructions before enabling automatic declines. Android compilation and device testing are not yet verified locally.

@@ -1,19 +1,27 @@
-# OfferGuardian v0.9.15 — Uber-only monitoring reliability
+# Offer Guardian 2.0.0 — dual-platform development build
 
-Complete Android source for OfferGuardian, updated from v0.9.14. **Waze support remains removed.** Only Uber Driver in the foreground is supported for OCR and auto-decline.
+Based on v0.9.15 (same Android application ID and existing database / settings keys). Android 11+ for accessibility screenshots. Version code 24.
 
-### New in v0.9.15
+## New in 2.0.0
+- One scanner supports visible Uber cards and DoorDash light/dark offer sheets. Uber's full overlay can be recognised while DoorDash is open. Uber decline requires a freshly verified X and ownership of the corresponding window; if Android does not expose it, the app leaves the offer alone.
+- DoorDash parses payout, stops, exact minutes, distance, merchant and countdown; requires two consistent reads before applying rules. Two stops plus a single customer drop-off is one delivery. Ambiguous stacks remain manual review. Customer address is not fabricated.
+- Two-stage DoorDash decline: verify the first button; then verify two fresh confirmation-dialog frames and the original countdown/deadline; check rules again; attempt the second button. Never accepts or matches. A missing card or completed gesture does not establish that the platform recorded a decline. History marks attempts / observed dismissal separately; outcomes remain Unknown until verified or manually set.
+- Shared existing financial rules by default. Optional separate DoorDash delivery tiers after saving them. Existing live rules are price/hour AND/OR and delivery tiers. Existing distance and calendar/time filters are History filters, not new live time schedules. DoorDash accepted-job detection is not implemented; outcomes can be set in History manually.
+- Combined history uses a DoorDash type prefix (no database migration; older entries are Uber), platform quick filters and existing export/import. Platform filtering reuses the search field. Statistics follow that filter. DoorDash qualifying overlay is positioned away from the Decline button.
+- Optional notification access and experimental automatic switching from a positively identified idle Uber screen. Disabled by default; generic notifications do not expose enough offer details. No app switching during an unverified or active Uber delivery. Return to Uber only after a verified idle DoorDash screen following a decline attempt. Android may block activity launches; open DoorDash manually if necessary. Recommended: keep DoorDash foreground and Uber overlay enabled.
+- Faster common scanner polling (900ms, minimum 650ms, 430ms fast verification retry), retains watchdog. No new GPS or network access.
 
-The scanner no longer relies on a capture flag that can remain busy forever if an Android screenshot callback or ML Kit OCR completion is lost. An 8-second **scanner watchdog** invalidates stalled work, safely discards delayed results, clears incomplete verification, and allows the Uber-only scan loop to resume. Repeated Android screenshot failures receive a short bounded backoff.
+## Install / test
+1. Export History before updating. Use the same application ID and signing key to preserve installed data; uninstalling clears local app data. Source archive only: build via GitHub Actions or local SDK.
+2. Extract the archive. Replace the old repository files with the extracted root contents, preserving `.github/workflows/build-apk.yml`, `app/`, `tests_bundle.zip`, `settings.gradle`, and `build.gradle`. Keep only one active workflow. GitHub Actions extracts the test bundle; the top-level source contains fewer than 100 files.
+3. Run **Actions → Build Offer Guardian APK → Run workflow**, download the 2.0.0 APK artifact once successful. Build requires Android SDK 35, Gradle 8.9, JDK 17.
+4. While safely parked, enable Accessibility, Monitoring, and screen recognition. Leave global TEST ONLY and DoorDash TEST ONLY enabled initially. Test both apps, light/dark modes and overlay with Live Diagnostics. For DoorDash, manually decline an offer to view the confirmation-screen diagnostic; the app will not tap it without a verified pending auto-decline.
+5. Only enable real taps if recognition and button ownership are reliable and permitted by the delivery-platform agreements. Disable TEST ONLY globally and DoorDash TEST ONLY separately, and turn auto-decline on. DoorDash automation remains opt-in for an upgrade. No automatic acceptance.
+6. For experimental switching, grant notification access, enable auto switching, and test a background DoorDash notification while Uber is idle. If no supported idle screen or notification text is detected, open DoorDash manually.
 
-The app now shows a **Monitor Health** heartbeat and recovery count in Live diagnostics and includes these details when diagnostics are copied. A stale or absent heartbeat can point to Android stopping/suspending the Accessibility service, which the app cannot forcibly restart.
+## Validation and limitations
+- Existing host-side Java and SQLite regression checks passed locally. New parser tests use transcribed OCR lines for all six supplied DoorDash offers, matching confirmation text, and negative tests for incomplete price, expiry, inconsistent timer and ambiguous count. The existing Uber visual X detector detected nine supplied Uber images and rejected eight DoorDash images (including confirmation screens), using decoded actual image pixels.
+- Android SDK / Gradle and a physical device were not available in the working environment, so an APK was not compiled or tested here. Live ML Kit OCR, gesture dispatch, Android window ownership, notification text and switching must be validated on the new device. The existing Uber X geometry remains restricted to comparable portrait aspect ratios; unusual layouts will be skipped. No timing or live success guarantee.
 
-The normal 1.7-second Uber scanning interval, bounded 430 ms verification retries, separate 1/2/3-delivery rules, OCR safeguards, History filters, CSV import/export, accepted-offer tracking, and live offer overlay are preserved. No Waze scanning is restored and no extra periodic screenshot work is added.
-
-### Building and testing
-
-Extract the ZIP, upload the source folders and files (including `.github` and `tests_bundle.zip`) into your GitHub repository, then run **Actions → Build Offer Guardian APK**. The workflow expands bundled host-side tests, runs them, and builds an Android debug APK.
-
-This ZIP contains source, **not a compiled APK**. The scanner watchdog passed standalone tests, and 26 host-side workflow checks passed locally. Android compilation and prolonged real-phone testing remain outstanding. Start with **TEST ONLY** and verify on your device while safely parked.
-
-See `INSTALL_ON_GITHUB.md`, `GITHUB_BUILD_GUIDE.md`, and `CHANGELOG_v0.9.15.md`.
+## 2.1.0 quick controls (experimental)
+Enable monitoring and the new floating quick controls toggle in Settings. D opens DoorDash, U opens Uber (accessible bubble first, direct launch fallback), DF opens DoorDash, recognises idle/current dash screens, presses Pause orders, verifies Dash Paused, then returns to Uber. DF does not end the Dash or sign out; DoorDash may end a Dash after 35 minutes paused. If settings or pause controls are inaccessible, the operation times out and must be completed manually. Test while parked. Quick controls are independent of automatic offer decline settings, and only respond to a manual tap. Android SDK compilation and live interactions are not verified in this environment.

@@ -136,10 +136,15 @@ public final class OfferHistoryActivity extends Activity {
 
         LinearLayout searchRow=row();root.addView(searchRow,box(-2,9));
         search=new EditText(this);search.setSingleLine(true);search.setTextSize(14);
-        search.setHint("Search pickup or destination");
+        search.setHint("Search pickup, destination or platform");
         search.setPadding(dp(11),0,dp(11),0);
         search.setBackground(bg(Color.WHITE,BORDER,10));
         searchRow.addView(search,new LinearLayout.LayoutParams(-1,dp(49)));
+        LinearLayout platformRow=row();root.addView(platformRow,box(-2,7));
+        for(String label:new String[]{"All platforms","Uber","DoorDash"}) {
+            TextView b=softButton(label,v->search.setText("All platforms".equals(label)?"":"@"+label));
+            platformRow.addView(b,new LinearLayout.LayoutParams(0,dp(39),1));
+        }
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s,int st,int cnt,int aft) {}
             @Override public void onTextChanged(CharSequence s,int start,int before,int count) {
@@ -628,8 +633,9 @@ public final class OfferHistoryActivity extends Activity {
         card.setOnLongClickListener(v->{confirmDeleteOffer(item);return true;});
     }
     private static String historyTypeLabel(OfferHistoryStore.Item item) {
-        if(item.deliveryCount<=0)return item.type;
         String base=item.type==null?"Delivery":item.type;
+        if(!base.startsWith("DoorDash · "))base="Uber · "+base;
+        if(item.deliveryCount<=0)return base;
         if(base.contains("(multiple)"))base=base.replace("(multiple)","").trim();
         if(base.matches(".*\\([0-9]+\\).*"))return base;
         return item.deliveryCount==1?base:base+" ("+item.deliveryCount+")";
@@ -655,7 +661,7 @@ public final class OfferHistoryActivity extends Activity {
             item.parsedHours,item.parsedMinutes,fallback(item.rawPayout),
             fallback(item.rawDuration),fallback(item.rawDistance),
             fallback(item.extractionNote),offerOutcome(item),
-            "DECLINE_REQUESTED".equals(item.action)?"\nAutomated decline tap was attempted; Uber confirmation unavailable.":"");
+            "DECLINE_REQUESTED".equals(item.action)?"\nAutomated decline attempted; platform confirmation unavailable.":"DASH_DISMISSED_UNCONFIRMED".equals(item.action)?"\nDoorDash dialog dismissed after second tap; rejection not independently confirmed.":"");
         new AlertDialog.Builder(this).setTitle("Offer details")
             .setMessage(detail).setNeutralButton("Close",null)
             .setPositiveButton("Set outcome",(d,w)->chooseOutcome(id)).show();

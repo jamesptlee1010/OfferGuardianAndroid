@@ -22,6 +22,18 @@ public final class CrossPlatformPolicy {
             if(s.equals("new delivery")||s.equals("new delivery offer")||s.equals("new offer")||s.equals("new order")||s.equals("new dash offer")||s.equals("new delivery opportunity"))return true;
         }return false;
     }
+    /** Explicit evidence of an active delivery, not absence of idle wording. */
+    public static boolean activeDelivery(String text){
+        if(text==null)return false;
+        String s=text.toLowerCase(Locale.ROOT).replace('’','\'');
+        return s.contains("confirm pickup")||s.contains("complete delivery")||s.contains("complete trip")||
+                s.contains("start delivery")||s.contains("arrived at store")||s.contains("arrived at restaurant")||
+                s.contains("navigate to pickup")||s.contains("navigate to drop-off")||s.contains("verify pin")||
+                s.contains("confirm drop-off")||s.contains("heading to pickup")||s.contains("delivery in progress");
+    }
+    public static boolean allowDashSwitch(OfferSurfacePolicy.Host host,boolean otherEnabled,boolean activeDelivery,boolean busy){
+        return !activeDelivery&&!busy&&(host==OfferSurfacePolicy.Host.UBER||host==OfferSurfacePolicy.Host.OTHER&&otherEnabled);
+    }
     public static boolean idleUber(String text){
         if(text==null)return false;
         String s=text.toLowerCase(Locale.ROOT).replace('’','\'');

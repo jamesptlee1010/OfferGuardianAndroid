@@ -1,0 +1,8 @@
+# v2.5.0 — Dual-platform reliability and vertical dock
+
+- Replaced four-button horizontal pill with vertical D / DF / DR; long-press drag, lock, reset and persisted position retained. Default right edge.
+- Uber: distinguish Exclusive and Trip Radar in diagnostics; tolerate window ID churn for financial reading, require fresh ownership for clicks, prefer explicit accessible decline control, retry cancelled/unconfirmed gestures up to three times for a continuous visible sequence. Optional verified native app fallback; no taps with unknown ownership.
+- Read-only qualifying rates can be displayed while strict merchant verification is pending; decline and history verification remain separate.
+- DoorDash: recognise both stacked drop-off formats. Financial-only reads need not include merchant, countdown or readable decline button. Stronger action identity still required to decline. Compare independent accessibility/OCR financial readings near the threshold; require a third agreeing read if OCR-only, protect a previously qualifying same-card read against later contradictions. Re-evaluate actual saved rules.
+- Faster screenshot scheduling with Android screenshot rate-limit margin. Two-stage decline remains guarded, with bounded recovery from cancelled gestures. Use the genuine Dasher notification activity intent or guarded direct launch fallback; record outcomes.
+- Expanded diagnostic history and persistent last-rule/ownership reports. No automatic acceptance; no new GPS functionality. All existing local settings and database schema retained, except initial position for the newly vertical dock.

@@ -80,13 +80,13 @@ final class OfferOverlay {
                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|
                         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                         PixelFormat.TRANSLUCENT);
-                p.gravity=Gravity.TOP|(dash?Gravity.CENTER_HORIZONTAL:Gravity.RIGHT);
-                p.x=dp(8);
-                p.y=dp(dash?65:10);
+                p.gravity=Gravity.TOP|Gravity.RIGHT;
+                p.x=dp(Prefs.of(service).getBoolean(Prefs.QUICK_CONTROLS,false)&&Prefs.of(service).getFloat(Prefs.QUICK_X,1f)>.7f?54:8);
+                p.y=dp(dash?105:10);
                 p.setTitle("Offer Guardian estimated rates");
                 wm.addView(panel,p);
             }
-            perHour.setText((dash?"DD · ":"")+hour);
+            perHour.setText(hour);
             perKm.setText(distance);
             currentText=label;
             return true;

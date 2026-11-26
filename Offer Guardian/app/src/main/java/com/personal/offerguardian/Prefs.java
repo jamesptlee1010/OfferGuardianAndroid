@@ -9,11 +9,11 @@ final class Prefs {
     private static final String NAME = "offer_guardian_prefs";
     static final String MONITOR = "monitor";
     static final String QUICK_CONTROLS = "quick_controls_v21";
-    static final String QUICK_X="quick_position_x_v22", QUICK_Y="quick_position_y_v22", QUICK_LOCK="quick_position_locked_v22";
+    static final String QUICK_X="quick_position_x_v25", QUICK_Y="quick_position_y_v25", QUICK_LOCK="quick_position_locked_v22";
     static final String UBER_ENABLED="uber_enabled_v2", DASH_ENABLED="dash_enabled_v2";
     static final String DASH_DRY="dash_dry_run_v2", DASH_SEPARATE="dash_separate_rules_v2";
     static final String AUTO_SWITCH="dash_auto_switch_v2", AUTO_RETURN="dash_auto_return_v2";
-    static final String DASH_NOTICE="dash_notice_v2";
+    static final String DASH_NOTICE="dash_notice_v2", DASH_NOTICE_DIAG="dash_notice_diag_v24", DASH_LAST_RULE_DIAG="dash_last_rule_diag_v24";
     static final String SWITCH_OTHER_IDLE="dash_switch_other_idle_v23";
     static SharedPreferences dashRules(Context context) {
         return context.getSharedPreferences("guardian_dash_rules_v2",Context.MODE_PRIVATE);

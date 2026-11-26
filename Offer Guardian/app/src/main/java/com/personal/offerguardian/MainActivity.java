@@ -170,7 +170,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v2.5.1  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v2.6.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
@@ -226,20 +226,22 @@ public final class MainActivity extends Activity {
         toggle(platforms,"Open DoorDash on New Delivery! notification (experimental)",prefs.getBoolean(Prefs.AUTO_SWITCH,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.AUTO_SWITCH,on).apply());
         toggle(platforms,"Allow switching from other apps while waiting",prefs.getBoolean(Prefs.SWITCH_OTHER_IDLE,true)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.SWITCH_OTHER_IDLE,on).apply());
         toggle(platforms,"Return to previous app after DoorDash decline",prefs.getBoolean(Prefs.AUTO_RETURN,true)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.AUTO_RETURN,on).apply());
-        button(platforms,"Enable notification access (optional)",false,v->startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        button(platforms,"Enable notification access (required for auto switching)",false,v->startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        button(platforms,"Reconnect notification listener",false,v->{android.service.notification.NotificationListenerService.requestRebind(new android.content.ComponentName(this,OfferNotificationListener.class));refresh();});
+        button(platforms,"Apply $30/hr to all six delivery tiers",false,v->new AlertDialog.Builder(this).setTitle("Set hourly rules to $30/hr?").setMessage("Enables the hourly rule and all delivery tiers on both platforms. Keeps your other rules and AND/OR choices.").setNegativeButton("Cancel",null).setPositiveButton("Apply",(d,w)->{Prefs.resetHourlyDefaults(this);refresh();}).show());
         button(platforms,"Open DoorDash",false,v->{Intent i=getPackageManager().getLaunchIntentForPackage(OfferSurfacePolicy.DOORDASH);if(i!=null)startActivity(i);else Toast.makeText(this,"DoorDash not found",Toast.LENGTH_SHORT).show();});
         LinearLayout quick=card(root,"Quick controls · D / DF / DR","Movable vertical floating pill (default right edge). Hold and drag any button to move the whole pill. D opens DoorDash; DF pauses orders and returns to Uber; DR resumes a paused Dash. Use only while safely parked. DF never ends a scheduled Dash; a pause may expire after 35 minutes.");
         toggle(quick,"Enable floating quick controls",prefs.getBoolean(Prefs.QUICK_CONTROLS,false)).setOnCheckedChangeListener((b,on)->{prefs.edit().putBoolean(Prefs.QUICK_CONTROLS,on).apply();if(on&&!accessibilityEnabled())openAccessibility();});
         toggle(quick,"Lock quick controls position",prefs.getBoolean(Prefs.QUICK_LOCK,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.QUICK_LOCK,on).apply());
         button(quick,"Reset quick controls position",false,v->{prefs.edit().remove(Prefs.QUICK_X).remove(Prefs.QUICK_Y).apply();Toast.makeText(this,"Quick controls reset to right edge",Toast.LENGTH_SHORT).show();});
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v2.5.1",
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v2.6.0",
                 "Compact black rate pill, upper-right on either platform (below DoorDash Decline). Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v2.5.1",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v2.6.0",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -373,9 +375,9 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v2.5.1\n"+
+            String report="Offer Guardian v2.6.0\n"+
                     monitorHealthSummary()+"\n"+
-                    "Notification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\n"+
+                    "Notification listener: "+OfferNotificationListener.connectionStatus(this)+"\nNotification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\n"+
                     "Last DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n"+
                     "Last Uber rule decision: "+prefs.getString("uber_last_rule_v25","No parsed offer")+"\n"+
                     "Last unresolved Uber windows: "+prefs.getString("uber_last_windows_v25","None recorded")+"\n"+
@@ -474,7 +476,7 @@ public final class MainActivity extends Activity {
                     .format(new Date(timestamp));
             lastStatus.setText(time+"\n"+prefs.getString(Prefs.LIVE_STATUS,"No scan status"));
         }
-        if(historyStatus!=null) historyStatus.setText("Notification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\nLast DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n\n"+prefs.getString(Prefs.DIAG_HISTORY,"No scan activity yet."));
+        if(historyStatus!=null) historyStatus.setText("Notification listener: "+OfferNotificationListener.connectionStatus(this)+"\nNotification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\nLast DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n\n"+prefs.getString(Prefs.DIAG_HISTORY,"No scan activity yet."));
     }
 
     @Override protected void onResume() {

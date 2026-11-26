@@ -1,4 +1,4 @@
-# Offer Guardian 2.5.1 — Dual-platform reliability
+# Offer Guardian 2.6.0 — Visual overlay fallback
 
 Upgrade from v2.4.0, with the same app ID and local history database. Existing thresholds, delivery tiers, settings and test-only switches are retained. No automatic acceptance. No new GPS or Internet permission.
 
@@ -14,9 +14,14 @@ Upgrade from v2.4.0, with the same app ID and local history database. Existing t
 ## Build and install
 1. Export offer history before upgrading. Keep the same signing key for an in-place upgrade.
 2. Extract the archive and upload all root contents to the existing GitHub project (including hidden `.github` workflow). Keep only one active version of the workflow. `tests_bundle.zip` is expanded by CI; do not manually upload its contents.
-3. Run Actions → Build Offer Guardian APK → Run workflow. The workflow runs the host tests and builds an Android debug APK using SDK 35, JDK 17, Gradle 8.9. Download the v2.5.1 artifact if successful.
+3. Run Actions → Build Offer Guardian APK → Run workflow. The workflow runs the host tests and builds an Android debug APK using SDK 35, JDK 17, Gradle 8.9. Download the v2.6.0 artifact if successful.
 4. Test while safely parked. Enable accessibility, monitoring, both delivery platforms, and optional notification access/switching. Keep test-only switches on until actual readings and targets are verified. Review delivery-platform agreements before enabling automation.
 5. If a $30/hr-only rule is intended, check that the relevant delivery tier enables hourly at $30 and that any other enabled rules/AND logic are intentional. No configured rule has been overridden by this upgrade.
 
 ## Validation and limitations
-See BUILD_TEST_RESULTS.md, CHANGELOG_v2.5.0.md and CHANGELOG_v2.5.1.md. The host-side tests do not prove real ML Kit OCR accuracy, Android window ownership, notification switching, drag gestures, or live declines. No Android SDK or Gradle was available locally, so APK compilation and live-device testing remain outstanding. Decline requests and observed dismissal do not independently confirm a platform-recorded decline; uncertain targets remain untouched.
+See BUILD_TEST_RESULTS.md and CHANGELOG_v2.6.0.md. The host-side tests do not prove real ML Kit OCR accuracy, Android window ownership, notification switching, drag gestures, or live declines. No Android SDK or Gradle was available locally, so APK compilation and live-device testing remain outstanding. Decline requests and observed dismissal do not independently confirm a platform-recorded decline; uncertain targets remain untouched.
+
+## v2.6.0 changes
+- DoorDash-hosted Uber offer with unexposed target window: two matching fresh frames, verified card and X, confirmed financial failure, stable window and no conflicting target; ownership remains preferred.
+- First use defaults to $30/hr for each tier in both rule stores. Existing saved settings remain unchanged; use Apply $30/hr to all six delivery tiers to reset hourly settings explicitly.
+- Notification listener health, reconnect button, faster repeat X search and DoorDash confirmation check.

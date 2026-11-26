@@ -170,7 +170,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v2.5.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v2.5.1  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
@@ -232,14 +232,14 @@ public final class MainActivity extends Activity {
         toggle(quick,"Enable floating quick controls",prefs.getBoolean(Prefs.QUICK_CONTROLS,false)).setOnCheckedChangeListener((b,on)->{prefs.edit().putBoolean(Prefs.QUICK_CONTROLS,on).apply();if(on&&!accessibilityEnabled())openAccessibility();});
         toggle(quick,"Lock quick controls position",prefs.getBoolean(Prefs.QUICK_LOCK,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.QUICK_LOCK,on).apply());
         button(quick,"Reset quick controls position",false,v->{prefs.edit().remove(Prefs.QUICK_X).remove(Prefs.QUICK_Y).apply();Toast.makeText(this,"Quick controls reset to right edge",Toast.LENGTH_SHORT).show();});
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v2.5.0",
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v2.5.1",
                 "Compact black rate pill, upper-right on either platform (below DoorDash Decline). Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v2.5.0",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v2.5.1",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -373,7 +373,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v2.5.0\n"+
+            String report="Offer Guardian v2.5.1\n"+
                     monitorHealthSummary()+"\n"+
                     "Notification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\n"+
                     "Last DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n"+

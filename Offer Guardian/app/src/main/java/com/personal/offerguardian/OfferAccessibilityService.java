@@ -120,7 +120,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private void quickAction(String action){
         if(quickBusy||dashGestureBusy||uberGestureBusy||dashStage==1||dashStage==2){status("Quick controls: another action is in progress; try again.");return;}
         if(!Prefs.of(this).getBoolean(Prefs.MONITOR,false)||!Prefs.of(this).getBoolean(Prefs.QUICK_CONTROLS,false))return;
-        switchReturnPackage="";prefs.edit().remove(Prefs.DASH_NOTICE).apply();
+        switchReturnPackage="";Prefs.of(this).edit().remove(Prefs.DASH_NOTICE).apply();
         quickBusy=true;int generation=++quickGeneration;quickDeadline=SystemClock.elapsedRealtime()+9000;
         watchdog.invalidate();clearReadVerification();hideOverlay();if(quickControls!=null)quickControls.hide();
         if("D".equals(action)){boolean ok=launchPackage(OfferSurfacePolicy.DOORDASH);handler.postDelayed(()->{if(generation==quickGeneration)finishQuick(ok?"Quick D: DoorDash launch requested.":"Quick D: could not open DoorDash.");},600);return;}

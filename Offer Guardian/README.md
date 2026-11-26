@@ -1,4 +1,4 @@
-# Offer Guardian 2.0.0 — dual-platform development build
+# Offer Guardian 2.3.0 — cross-platform offer handling
 
 Based on v0.9.15 (same Android application ID and existing database / settings keys). Android 11+ for accessibility screenshots. Version code 24.
 
@@ -14,7 +14,7 @@ Based on v0.9.15 (same Android application ID and existing database / settings k
 ## Install / test
 1. Export History before updating. Use the same application ID and signing key to preserve installed data; uninstalling clears local app data. Source archive only: build via GitHub Actions or local SDK.
 2. Extract the archive. Replace the old repository files with the extracted root contents, preserving `.github/workflows/build-apk.yml`, `app/`, `tests_bundle.zip`, `settings.gradle`, and `build.gradle`. Keep only one active workflow. GitHub Actions extracts the test bundle; the top-level source contains fewer than 100 files.
-3. Run **Actions → Build Offer Guardian APK → Run workflow**, download the 2.0.0 APK artifact once successful. Build requires Android SDK 35, Gradle 8.9, JDK 17.
+3. Run **Actions → Build Offer Guardian APK → Run workflow**, download the 2.3.0 APK artifact once successful. Build requires Android SDK 35, Gradle 8.9, JDK 17.
 4. While safely parked, enable Accessibility, Monitoring, and screen recognition. Leave global TEST ONLY and DoorDash TEST ONLY enabled initially. Test both apps, light/dark modes and overlay with Live Diagnostics. For DoorDash, manually decline an offer to view the confirmation-screen diagnostic; the app will not tap it without a verified pending auto-decline.
 5. Only enable real taps if recognition and button ownership are reliable and permitted by the delivery-platform agreements. Disable TEST ONLY globally and DoorDash TEST ONLY separately, and turn auto-decline on. DoorDash automation remains opt-in for an upgrade. No automatic acceptance.
 6. For experimental switching, grant notification access, enable auto switching, and test a background DoorDash notification while Uber is idle. If no supported idle screen or notification text is detected, open DoorDash manually.
@@ -25,3 +25,14 @@ Based on v0.9.15 (same Android application ID and existing database / settings k
 
 ## 2.1.0 quick controls (experimental)
 Enable monitoring and the new floating quick controls toggle in Settings. D opens DoorDash, U opens Uber (accessible bubble first, direct launch fallback), DF opens DoorDash, recognises idle/current dash screens, presses Pause orders, verifies Dash Paused, then returns to Uber. DF does not end the Dash or sign out; DoorDash may end a Dash after 35 minutes paused. If settings or pause controls are inaccessible, the operation times out and must be completed manually. Test while parked. Quick controls are independent of automatic offer decline settings, and only respond to a manual tap. Android SDK compilation and live interactions are not verified in this environment.
+
+## 2.2.0 — movable quick controls and DR
+The pill now reads D | DF | DR | U. Tap DR to open DoorDash and resume an existing paused Dash; it remains in DoorDash. It only clicks an identifiable Resume dash control on a verified paused screen, and verifies a recognised idle screen afterward. It never starts a new Dash or accepts an offer. Hold any part of the pill for 450 ms and drag the whole bar; the position is saved on release, with a lock and reset in Settings. No shortcut fires during dragging. Automatic decline targets covered by the pill are skipped. Position uses normalized safe-screen travel; live orientation and inset behavior needs device testing. No APK compiled locally; use the GitHub Actions 2.2.0 artifact.
+
+## 2.3.0 — notification and cross-app offer handling
+- Leave DoorDash open: Uber visual offers are processed using the existing Uber rules, including standard, heavy, and Pack & Deliver layouts. The same foreground-independent path can scan a visible Uber overlay on other apps. Detection is gated by a supported app, a large Uber-owned window or a recent Uber accessibility event. Offer identity and payout/metrics must be verified; window ownership is rechecked after OCR and just before a tap. If ownership is inaccessible, the app may read/alert but will not tap. No blind coordinate fallback.
+- Notification access plus the Open DoorDash on New Delivery! toggle enables a package-verified, short-lived, duplicate-filtered notification trigger. No notification content is saved. DoorDash opens after a fresh scan finds no competing Uber card and Uber is positively identified as idle. The switch also works in test-only mode (decline taps remain disabled).
+- An additional optional setting allows switching from other apps (such as Gemini) while waiting; requires recent verified idle Uber evidence within 2 minutes and no observed unsafe state. This is not reliable knowledge of background delivery status. Keep disabled during active deliveries. If the app cannot verify idle state or launch the destination, switch manually.
+- DoorDash two-stage decline and confirmation retained. After the app observes the DoorDash idle screen twice following its decline attempt, it can request reopening the previous app; observed dismissal is not independent confirmation of a decline. If a qualifying offer arrives, DoorDash remains open.
+- D | DF | DR | U, drag positioning, history, and independent financial rules retained. Neither platform is ever auto-accepted.
+- Host-side regression tests passed; Android SDK compilation, ML Kit OCR on live screenshots, actual notification delivery, overlay ownership and real gesture success remain unverified. Test while parked and check platform agreements before enabling automated taps.

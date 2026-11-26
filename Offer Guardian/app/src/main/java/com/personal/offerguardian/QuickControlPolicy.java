@@ -5,6 +5,12 @@ import java.util.Locale;
 /** Fail closed: never pause an active delivery or confuse an offer with the idle screen. */
 final class QuickControlPolicy {
     enum Screen { IDLE, MENU, PAUSED, UNKNOWN }
+    enum ResumeDecision { CLICK, WAIT, ALREADY_ACTIVE, VERIFIED }
+    static ResumeDecision resumeDecision(Screen screen,boolean alreadyPressed){
+        if(screen==Screen.IDLE)return alreadyPressed?ResumeDecision.VERIFIED:ResumeDecision.ALREADY_ACTIVE;
+        if(screen==Screen.PAUSED&&!alreadyPressed)return ResumeDecision.CLICK;
+        return ResumeDecision.WAIT;
+    }
     static Screen screen(String raw) {
         String s=raw==null?"":raw.toLowerCase(Locale.ROOT).replace('’','\'');
         if(s.contains("customer drop-off")||s.contains("decline offer")||s.contains("accept offer")||s.contains("confirm pickup")||s.contains("complete delivery")||s.contains("arrived at store")||s.contains("directions")||s.contains("pick up by")||s.contains("deliver by")||s.contains("cancel delivery"))return Screen.UNKNOWN;

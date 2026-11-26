@@ -1,0 +1,5 @@
+# v2.2.0 — Drag and resume
+- Adds DR between DF and U. Opens DoorDash, verifies the visible paused screen and the owned Resume dash control, requests one successful accessibility click, then checks the idle offer-waiting screen. If already active, no click. Unknown/obscured screens time out; does not start a new Dash, end a Dash, or accept an offer.
+- Press and hold the whole D | DF | DR | U pill for 450 ms, then drag. Short taps retain existing actions. Long touches, movement and cancellation suppress button actions. Position stored in private preferences as screen travel fractions; constrained to screen bounds, restored when recreated. Lock and reset controls in settings. No mandatory edge snapping.
+- Automatic decline targeting refuses points under the touchable pill. All existing rule and history keys retained; same application ID, version code 26.
+- Host tests: 16 screen/DR and 14 drag-policy checks passed. Android build and live device verification outstanding. Accessibility controls must be exposed; no blind tapping. Use while safely parked.

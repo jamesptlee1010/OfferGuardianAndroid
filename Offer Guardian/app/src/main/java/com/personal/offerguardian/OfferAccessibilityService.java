@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Path;
 import android.graphics.Rect;
+import android.graphics.Region;
 import android.hardware.HardwareBuffer;
 import android.os.Build;
 import android.os.Handler;
@@ -32,15 +33,14 @@ import java.util.Locale;
 
 /**
  * Private on-device Uber screen monitor. It does not use Uber APIs or credentials.
- * Detection path: Uber Driver foreground -> fresh screenshot -> automatic
+ * Detection path: visible delivery window -> fresh screenshot -> automatic
  * light/dark offer-card border + matching X -> OCR payout INSIDE the same
  * card -> existing rules. Ambiguous screens never receive a gesture.
  * No legacy click-event learning, fixed tap coordinates, or automatic accepting.
  */
 public final class OfferAccessibilityService extends AccessibilityService {
     private static final String UBER = OfferSurfacePolicy.UBER;
-    // One Uber-only idle polling interval; fast retries run only during
-    // active offer verification, never while another app is foreground.
+    // Shared polling; other apps are inspected only for a delivery-window event or fresh offer notification.
     private static final long UBER_POLL_MS=900;
     private static final long UBER_MIN_CAPTURE_MS=650;
     // Android limits repeated Accessibility screenshots (~333 ms in AOSP).
@@ -73,7 +73,6 @@ public final class OfferAccessibilityService extends AccessibilityService {
                         hideOverlay();clearPendingAcceptance();clearReadVerification();resetDash();
                         status("Visual recognition is OFF. Turn on grey-X recognition in the app.");
                     } else if (isSupportedForeground()) {
-                        maybeOpenDash(now);
                         reportHeartbeat(now, "Delivery monitor active: "+foregroundHost());
                         scanIfDue();
                     } else {
@@ -98,7 +97,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private boolean quickBusy=false,uberGestureBusy=false;
     private int quickGeneration=0;
     private long quickDeadline=0;
-    private boolean quickOpenedMenu=false,quickPressedPause=false;
+    private boolean quickOpenedMenu=false,quickPressedPause=false,quickPressedResume=false;
     private void refreshQuickControls(SharedPreferences p) {
         if(p.getBoolean(Prefs.QUICK_CONTROLS,false)&&p.getBoolean(Prefs.MONITOR,false)&&!quickBusy){
             if(quickControls==null)quickControls=new QuickControls(this,this::quickAction);
@@ -110,10 +109,17 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private void quickAction(String action){
         if(quickBusy||dashGestureBusy||uberGestureBusy||dashStage==1||dashStage==2){status("Quick controls: another action is in progress; try again.");return;}
         if(!Prefs.of(this).getBoolean(Prefs.MONITOR,false)||!Prefs.of(this).getBoolean(Prefs.QUICK_CONTROLS,false))return;
+        switchReturnPackage="";Prefs.of(this).edit().remove(Prefs.DASH_NOTICE).apply();
         quickBusy=true;int generation=++quickGeneration;quickDeadline=SystemClock.elapsedRealtime()+9000;
         watchdog.invalidate();clearReadVerification();hideOverlay();if(quickControls!=null)quickControls.hide();
         if("D".equals(action)){boolean ok=launchPackage(OfferSurfacePolicy.DOORDASH);handler.postDelayed(()->{if(generation==quickGeneration)finishQuick(ok?"Quick D: DoorDash launch requested.":"Quick D: could not open DoorDash.");},600);return;}
         if("U".equals(action)){quickReturnUber(generation,"Quick U");return;}
+        if("DR".equals(action)){
+            quickPressedResume=false;
+            if(foregroundHost()!=OfferSurfacePolicy.Host.DOORDASH&&!launchPackage(OfferSurfacePolicy.DOORDASH)){finishQuick("DR: DoorDash could not open.");return;}
+            handler.postDelayed(()->quickResumeStep(generation),300);return;
+        }
+        if(!"DF".equals(action)){finishQuick("Unknown quick action; no tap.");return;}
         quickOpenedMenu=false;quickPressedPause=false;
         if(foregroundHost()!=OfferSurfacePolicy.Host.DOORDASH&&!launchPackage(OfferSurfacePolicy.DOORDASH)){finishQuick("DF: DoorDash could not open.");return;}
         handler.postDelayed(()->quickPauseStep(generation),300);
@@ -132,6 +138,29 @@ public final class OfferAccessibilityService extends AccessibilityService {
             if(clickQuickLabel(root,OfferSurfacePolicy.DOORDASH,new String[]{"pause orders"},false)){quickPressedPause=true;status("DF: Pause orders pressed; verifying.");}
         }
         handler.postDelayed(()->quickPauseStep(generation),350);
+    }
+    private void quickResumeStep(int generation){
+        if(!quickCurrent(generation))return;
+        if(SystemClock.elapsedRealtime()>=quickDeadline){finishQuick("DR stopped: resume not verified. Check DoorDash manually.");return;}
+        if(foregroundHost()!=OfferSurfacePolicy.Host.DOORDASH||quickUberOfferObscuresDash()){handler.postDelayed(()->quickResumeStep(generation),350);return;}
+        AccessibilityNodeInfo root=getRootInActiveWindow();
+        if(root==null||root.getPackageName()==null||!OfferSurfacePolicy.DOORDASH.contentEquals(root.getPackageName())){handler.postDelayed(()->quickResumeStep(generation),350);return;}
+        StringBuilder b=new StringBuilder();collectQuickVisibleText(root,b,0);
+        QuickControlPolicy.Screen screen=QuickControlPolicy.screen(b.toString());
+        switch(QuickControlPolicy.resumeDecision(screen,quickPressedResume)){
+            case ALREADY_ACTIVE:finishQuick("DR: DoorDash already active; no tap.");return;
+            case VERIFIED:finishQuick("DR: DoorDash resumed; finding offers verified.");return;
+            case CLICK:
+                if(clickQuickLabel(root,OfferSurfacePolicy.DOORDASH,new String[]{"resume dash"},false)){quickPressedResume=true;status("DR: Resume dash pressed; verifying.");}
+                break;
+            default:break;
+        }
+        handler.postDelayed(()->quickResumeStep(generation),350);
+    }
+    private void collectQuickVisibleText(AccessibilityNodeInfo n,StringBuilder b,int depth){
+        if(n==null||depth>20||b.length()>10000)return;
+        if(n.isVisibleToUser()){if(n.getText()!=null)b.append(' ').append(n.getText());if(n.getContentDescription()!=null)b.append(' ').append(n.getContentDescription());}
+        for(int i=0;i<n.getChildCount();i++)collectQuickVisibleText(n.getChild(i),b,depth+1);
     }
     private boolean clickQuickLabel(AccessibilityNodeInfo root,String pkg,String[] labels,boolean topLeft){
         AccessibilityNodeInfo node=findQuickLabel(root,labels,0);if(node==null)return false;
@@ -220,7 +249,11 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private int dashConfirmWindow=-1;
     private String dashKey="";
     private int dashStage=0,dashMissing=0,dashWindow=-1,dashOfferWindow=-1;
-    private boolean dashAlerted=false,dashGestureBusy=false,switchedFromUber=false;
+    private boolean dashAlerted=false,dashGestureBusy=false;
+    private String switchReturnPackage="";
+    private long lastUberWindowEvent=0;
+    private long lastVerifiedIdleUber=0;
+    private boolean deliveryStateUnsafe=false;
     private long switchedAt=0,lastSwitchAttempt=0,dashGestureGeneration=0;
     private DoorDashOffer.Confirmation dashConfirmPrevious;
     private boolean uberVisibleLast=false;
@@ -378,6 +411,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(event==null)return;
         OfferSurfacePolicy.Host host=OfferSurfacePolicy.classify(
                 event.getPackageName()==null?null:event.getPackageName().toString());
+        if(host==OfferSurfacePolicy.Host.UBER)lastUberWindowEvent=SystemClock.elapsedRealtime();
         if(!OfferSurfacePolicy.shouldScan(host)) {
             if(!isSupportedForeground())hideOverlay();
             return;
@@ -393,19 +427,33 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(root==null||root.getPackageName()==null)return OfferSurfacePolicy.Host.OTHER;
         return OfferSurfacePolicy.classify(root.getPackageName().toString());
     }
+    private String activePackage() {
+        AccessibilityNodeInfo root=getRootInActiveWindow();
+        return root==null||root.getPackageName()==null?"":root.getPackageName().toString();
+    }
+    private boolean largeUberWindow() {
+        List<AccessibilityWindowInfo> windows=getWindows();if(windows==null)return false;
+        int width=getResources().getDisplayMetrics().widthPixels,height=getResources().getDisplayMetrics().heightPixels;
+        for(AccessibilityWindowInfo window:windows){
+            Rect bounds=new Rect();window.getBoundsInScreen(bounds);
+            if(bounds.width()<width*.35||bounds.height()<height*.22)continue;
+            AccessibilityNodeInfo root=window.getRoot();
+            if(root!=null&&root.getPackageName()!=null&&UBER.contentEquals(root.getPackageName()))return true;
+        }return false;
+    }
     private boolean isSupportedForeground() {
         OfferSurfacePolicy.Host h=foregroundHost();
-        SharedPreferences p=Prefs.of(this);
-        return (h==OfferSurfacePolicy.Host.UBER && p.getBoolean(Prefs.UBER_ENABLED,true)) ||
-                (h==OfferSurfacePolicy.Host.DOORDASH && (p.getBoolean(Prefs.DASH_ENABLED,true)||p.getBoolean(Prefs.UBER_ENABLED,true))) ||
-                (h==OfferSurfacePolicy.Host.UBER && p.getBoolean(Prefs.DASH_ENABLED,true)&&p.getBoolean(Prefs.AUTO_SWITCH,false));
+        SharedPreferences p=Prefs.of(this);long now=SystemClock.elapsedRealtime();
+        return CrossPlatformPolicy.scan(h,p.getBoolean(Prefs.UBER_ENABLED,true),p.getBoolean(Prefs.DASH_ENABLED,true),
+                largeUberWindow(),lastUberWindowEvent>0&&now-lastUberWindowEvent<6000,
+                p.getBoolean(Prefs.AUTO_SWITCH,false)&&CrossPlatformPolicy.freshNotice(p.getLong(Prefs.DASH_NOTICE,0),now));
     }
     private boolean isUberForeground() {
         return foregroundHost()==OfferSurfacePolicy.Host.UBER;
     }
 
     private void scanIfDue() {
-        if(quickBusy)return;
+        if(quickBusy||Prefs.of(this).getBoolean(Prefs.LEARNING,false)||!Prefs.of(this).getBoolean(Prefs.MONITOR,false))return;
         if (Build.VERSION.SDK_INT<30) {
             status("Android 11+ required for screen screenshots.");return;
         }
@@ -414,7 +462,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 hourBoundVerifier.isPending()||countVerifier.isPending()||fastRetryPending;
         long minInterval=confirmationPending?FAST_CONFIRM_MIN_CAPTURE_MS:UBER_MIN_CAPTURE_MS;
         recoverStalledCapture(now);
-        if(watchdog.busy() || dashGestureBusy || now<nextCaptureAfter ||
+        if(watchdog.busy() || dashGestureBusy || uberGestureBusy || now<nextCaptureAfter ||
                 now-lastCaptureAt<minInterval)return;
         fastRetryPending=false;
         lastCaptureAt=now;
@@ -504,11 +552,15 @@ public final class OfferAccessibilityService extends AccessibilityService {
             // If the geometry is too different from the known template, never tap it.
             final boolean uberGeometry=Math.abs(w/(double)h-VisualDeclineDetector.WIDTH/(double)VisualDeclineDetector.HEIGHT)<=.025;
             if(!visual.found || !uberGeometry) {
+                // No competing Uber card in this fresh frame. Only now consider opening DoorDash.
+                if(!visual.found && maybeOpenDash(SystemClock.elapsedRealtime())){
+                    clearUberSession();uberVisibleLast=false;source.recycle();finishCapture(token);return;
+                }
                 if(foregroundHost()==OfferSurfacePolicy.Host.DOORDASH && Prefs.of(this).getBoolean(Prefs.DASH_ENABLED,true)) {
                     if(uberVisibleLast){clearUberSession();uberVisibleLast=false;}
                     processDashScreenshot(source,token,w,h);return;
                 }
-                if(foregroundHost()==OfferSurfacePolicy.Host.DOORDASH){hideOverlay();clearUberSession();source.recycle();finishCapture(token);return;}
+                if(foregroundHost()!=OfferSurfacePolicy.Host.UBER){hideOverlay();clearUberSession();uberVisibleLast=false;source.recycle();finishCapture(token);return;}
                 hideOverlay();clearReadVerification();
                 ++noOfferFrames;
                 // Losing the offer card does NOT mean Accept was pressed.
@@ -539,9 +591,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
             if(!Prefs.of(this).getBoolean(Prefs.UBER_ENABLED,true)) {
                 hideOverlay();source.recycle();finishCapture(token);return;
             }
-            if(!uberVisibleLast){hideOverlay();clearUberSession();uberVisibleLast=true;dashPrevious=null;dashConfirmPrevious=null;}
-            uberOfferWindow=windowAt(visual.x*w/VisualDeclineDetector.WIDTH,visual.y*h/VisualDeclineDetector.HEIGHT,OfferSurfacePolicy.UBER);
-            noOfferFrames=0;
+            int owner=windowAt(visual.x*w/VisualDeclineDetector.WIDTH,visual.y*h/VisualDeclineDetector.HEIGHT,UBER);
+            if(!uberVisibleLast||owner!=uberOfferWindow){hideOverlay();clearUberSession();uberVisibleLast=true;dashPrevious=null;dashConfirmPrevious=null;}
+            uberOfferWindow=owner;
+            // Unexposed overlay ownership must never authorize a tap. We can still
+            // read a strongly identified visible card and alert for qualifying offers.
+            if(owner<0)status("Uber card visible over "+foregroundHost()+"; X ownership unavailable. Read-only until verified.");
+            noOfferFrames=0;lastVerifiedIdleUber=0;deliveryStateUnsafe=true;
             clearPendingAcceptance();
             status(String.format(Locale.US,"%s offer on %s: X (%d,%d), %.0f%%; reading payout...",
                     visual.theme,foregroundHost(),visual.x,visual.y,visual.confidence*100));
@@ -560,7 +616,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             recognizer.process(InputImage.fromBitmap(ocrImage,0))
                 .addOnSuccessListener(text -> {
                     if(!ownsFreshCapture(token)) return;
-                    try {onOcrReady(text,visual,w,h,left,top,scanStarted,screenshotReady,visualReady);} catch(Exception e) {
+                    try {onOcrReady(text,visual,w,h,ocrImage==frame?0:left,ocrImage==frame?0:top,scanStarted,screenshotReady,visualReady);} catch(Exception e) {
                         status("Price-reading exception: "+e.getClass().getSimpleName());
                     }
                 })
@@ -589,7 +645,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                             long screenshotReady,long visualReady) {
         if(!isSupportedForeground() || !Prefs.of(this).getBoolean(Prefs.UBER_ENABLED,true)) {status("Uber offer no longer on supported surface; no action.");return;}
         SharedPreferences prefs=Prefs.of(this);
-        if(!prefs.getBoolean(Prefs.MONITOR,false)||!prefs.getBoolean(Prefs.VISUAL_X,false)) return;
+        if(!prefs.getBoolean(Prefs.MONITOR,false)||!prefs.getBoolean(Prefs.VISUAL_X,false)||prefs.getBoolean(Prefs.LEARNING,false)) return;
         List<OfferScreenEvaluator.Line> lines=new ArrayList<>();
         for(Text.TextBlock block:text.getTextBlocks()) {
             for(Text.Line line:block.getLines()) {
@@ -605,6 +661,11 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         final String timing=OfferScanTiming.summary(scanStarted,screenshotReady,
                 visualReady,SystemClock.elapsedRealtime());
+        int currentOwner=windowAt(visual.x*width/VisualDeclineDetector.WIDTH,visual.y*height/VisualDeclineDetector.HEIGHT,UBER);
+        if(currentOwner!=uberOfferWindow){hideOverlay();clearReadVerification();status("Uber offer window changed during OCR; no action.");return;}
+        if((currentOwner<0||foregroundHost()!=OfferSurfacePolicy.Host.UBER)&&!OfferScreenEvaluator.hasOfferIdentity(visual,lines)){
+            hideOverlay();clearReadVerification();status("Uber overlay identity not readable; no action.");return;
+        }
         OfferScreenEvaluator.Assessment a=OfferScreenEvaluator.assess(visual,lines);
         if(!a.valid) {
             hideOverlay();
@@ -1037,6 +1098,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             VisualDeclineDetector.Match visual,List<OfferScreenEvaluator.Line> lines,
             int width,int height,long now,String timing) {
         SharedPreferences prefs=Prefs.of(this);
+        if(uberGestureBusy||dashGestureBusy||quickBusy)return;
         if(autoDeclineSent) {status("Decline gesture already dispatched for this offer; no repeat.");return;}
         if(!prefs.getBoolean(Prefs.AUTO_DECLINE,false)||prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
             status("Automatic decline disabled or TEST ONLY enabled. No tap. "+timing);return;
@@ -1046,9 +1108,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         OfferSurfacePolicy.Host host=foregroundHost();
         boolean reliableOfferText=OfferScreenEvaluator.hasOfferIdentity(visual,lines);
-        if(!OfferSurfacePolicy.allowDecline(OfferSurfacePolicy.Host.UBER,true,reliableOfferText,1,visual.confidence) ||
+        if(!CrossPlatformPolicy.allowUberDecline(host,uberOfferWindow>=0,reliableOfferText,visual.confidence) ||
                 !prefs.getBoolean(Prefs.UBER_ENABLED,true) || (host!=OfferSurfacePolicy.Host.UBER && !reliableOfferText)) {
-            status("Offer verification failed; no tap. " + timing);return;
+            status(uberOfferWindow<0?"Uber X window ownership not verified; no tap. "+timing:"Offer verification failed; no tap. " + timing);return;
         }
         if(SystemClock.elapsedRealtime()-lastCaptureAt>1900) {
             status("OCR took too long; screenshot is stale, so no tap.");return;
@@ -1102,6 +1164,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     /** The topmost window at the exact point must be owned by the expected app.
      * Never use a stale package name or a coordinate alone as authority to click. */
     private int windowAt(int x,int y,String expected) {
+        if(quickControls!=null&&quickControls.covers(x,y))return -1;
         List<AccessibilityWindowInfo> windows=getWindows();
         if(windows==null)return -1;
         windows=new ArrayList<>(windows);
@@ -1109,6 +1172,8 @@ public final class OfferAccessibilityService extends AccessibilityService {
         Rect r=new Rect();
         for(AccessibilityWindowInfo win:windows){
             win.getBoundsInScreen(r);if(!r.contains(x,y))continue;
+            // On Android 11+ the region is more precise than an overlay's rectangular bounds.
+            if(Build.VERSION.SDK_INT>=30){Region region=new Region();win.getRegionInScreen(region);if(!region.contains(x,y))continue;}
             AccessibilityNodeInfo node=win.getRoot();
             String pkg=node==null||node.getPackageName()==null?"":node.getPackageName().toString();
             if(getPackageName().equals(pkg)&&win.getType()==AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY)continue;
@@ -1171,14 +1236,21 @@ public final class OfferAccessibilityService extends AccessibilityService {
             }return;
         }
         DoorDashOffer.Read read=DoorDashOffer.parse(lines);
+        // A non-idle DoorDash screen might be an active delivery. Require a fresh
+        // positively idle Uber screen before allowing other-app notification switches.
+        if(read!=null||!dashIdleText(lines)){lastVerifiedIdleUber=0;deliveryStateUnsafe=true;}
         if(read==null){
             hideOverlay();dashPrevious=null;dashConfirmPrevious=null;
             // A missing/obscured OCR frame is not proof of decline. Require a recognised idle screen twice.
             if(dashIdleText(lines)){
                 if(++dashMissing>=2){
                     if(dashStage==2&&dashId>0){try(OfferHistoryStore store=new OfferHistoryStore(this)){store.markDashDismissed(dashId);}catch(Exception ignored){}status("DoorDash dialog dismissed; decline remains unconfirmed.");}
-                    boolean returnToUber=dashStage==2&&switchedFromUber&&prefs.getBoolean(Prefs.AUTO_RETURN,true)&&prefs.getBoolean(Prefs.AUTO_SWITCH,false)&&now-switchedAt<90000;
-                    resetDash();if(returnToUber&&dashVisible(w,h)){switchedFromUber=false;launchPackage(UBER);}
+                    boolean shouldReturn=dashStage==2&&!switchReturnPackage.isEmpty()&&prefs.getBoolean(Prefs.AUTO_RETURN,true)&&prefs.getBoolean(Prefs.AUTO_SWITCH,false)&&now-switchedAt<90000;
+                    String previous=switchReturnPackage;switchReturnPackage="";
+                    resetDash();if(shouldReturn&&dashVisible(w,h)&&!largeUberWindow()){
+                        if(launchPackage(previous))status("DoorDash dismissed; previous application launch requested.");
+                        else status("DoorDash dismissed; could not return automatically. Switch manually.");
+                    }
                 }
             }else dashMissing=0;
             if(dashStage>0&&now-dashStageAt>12000){dashStage=3;status("DoorDash decline sequence timed out; no repeat tap.");}
@@ -1256,22 +1328,46 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
     private boolean dashIdleText(List<OfferScreenEvaluator.Line> lines){
         StringBuilder b=new StringBuilder();for(OfferScreenEvaluator.Line l:lines)b.append(' ').append(l.text.toLowerCase(Locale.ROOT));String t=b.toString();
-        return t.contains("this dash")&&(t.contains("looking for orders")||t.contains("finding orders")||t.contains("waiting for orders")||t.contains("hotspot")||t.contains("very busy"))&&
+        return t.contains("this dash")&&(t.contains("looking for orders")||t.contains("finding offers")||t.contains("finding orders")||t.contains("waiting for orders")||t.contains("hotspot")||t.contains("very busy"))&&
                 !t.contains("customer drop-off")&&!t.contains("decline offer")&&!t.contains("confirm pickup")&&!t.contains("directions");
     }
     private void collectIdleText(AccessibilityNodeInfo n,StringBuilder b,int depth){if(n==null||depth>20||b.length()>10000)return;if(n.getText()!=null)b.append(' ').append(n.getText());if(n.getContentDescription()!=null)b.append(' ').append(n.getContentDescription());for(int i=0;i<n.getChildCount();i++)collectIdleText(n.getChild(i),b,depth+1);}
-    private void maybeOpenDash(long now){
+    private boolean maybeOpenDash(long now){
         SharedPreferences p=Prefs.of(this);
-        if(!p.getBoolean(Prefs.AUTO_SWITCH,false)||!p.getBoolean(Prefs.DASH_ENABLED,true)||!p.getBoolean(Prefs.MONITOR,false)||p.getBoolean(Prefs.VISUAL_DRY_RUN,true)||p.getBoolean(Prefs.DASH_DRY,true)||!isUberForeground()||watchdog.busy()||dashGestureBusy||now-lastSwitchAttempt<12000)return;
-        long notice=p.getLong(Prefs.DASH_NOTICE,0);if(notice<=0||now-notice>16000||now<notice)return;
-        if(uberVisibleLast||lastHistoryId>0||pendingAcceptanceId>0)return;
-        StringBuilder b=new StringBuilder();collectIdleText(getRootInActiveWindow(),b,0);String s=b.toString().toLowerCase(Locale.ROOT);
-        // Only positively identified idle Uber: never interrupt navigation/active pickup.
-        if(!(s.contains("you're online")||s.contains("you’re online")||s.contains("you are online"))||!(s.contains("finding trips")||s.contains("waiting for requests")||s.contains("looking for trips"))||s.contains("pickup")||s.contains("drop-off")||s.contains("accept")||s.contains("navigate")||s.contains("delivery"))return;
+        String previous=activePackage();OfferSurfacePolicy.Host host=OfferSurfacePolicy.classify(previous);
+        if(host==OfferSurfacePolicy.Host.DOORDASH){p.edit().remove(Prefs.DASH_NOTICE).apply();return false;}
+        // Positive idle evidence is refreshed even without a notification. This is
+        // deliberately not a claim that a background delivery cannot have started.
+        if(host==OfferSurfacePolicy.Host.UBER){
+            StringBuilder b=new StringBuilder();collectIdleText(getRootInActiveWindow(),b,0);
+            String text=b.toString();
+            if(CrossPlatformPolicy.idleUber(text)){lastVerifiedIdleUber=now;deliveryStateUnsafe=false;}
+            else {lastVerifiedIdleUber=0;deliveryStateUnsafe=true;}
+        }
+        long notice=p.getLong(Prefs.DASH_NOTICE,0);
+        if(!p.getBoolean(Prefs.AUTO_SWITCH,false)||!p.getBoolean(Prefs.DASH_ENABLED,true)||!p.getBoolean(Prefs.MONITOR,false)||
+                quickBusy||dashGestureBusy||uberGestureBusy||dashStage==1||dashStage==2||now-lastSwitchAttempt<12000||
+                !CrossPlatformPolicy.freshNotice(notice,now)||previous.isEmpty()||getPackageName().equals(previous))return false;
+        if(uberVisibleLast||pendingAcceptanceId>0||largeUberWindow()&&host!=OfferSurfacePolicy.Host.UBER)return false;
+        boolean idle=host==OfferSurfacePolicy.Host.UBER&&lastVerifiedIdleUber==now;
+        boolean otherAllowed=host==OfferSurfacePolicy.Host.OTHER&&p.getBoolean(Prefs.SWITCH_OTHER_IDLE,false)&&
+                !deliveryStateUnsafe&&lastVerifiedIdleUber>0&&now-lastVerifiedIdleUber<120000;
+        if(!idle&&!otherAllowed){status("DoorDash New Delivery! detected; waiting for verified idle Uber or authorised other-app mode. No switch.");return false;}
         lastSwitchAttempt=now;p.edit().remove(Prefs.DASH_NOTICE).apply();
-        if(launchPackage(OfferSurfacePolicy.DOORDASH)){switchedFromUber=true;switchedAt=now;status("DoorDash offer notification; requested opening DoorDash from verified idle Uber.");}
+        if(launchPackage(OfferSurfacePolicy.DOORDASH)){
+            switchReturnPackage=previous;switchedAt=now;status("DoorDash New Delivery! notification; opening DoorDash from "+previous+". Awaiting offer.");return true;
+        }
+        return false;
     }
-    private boolean launchPackage(String pkg){try{Intent intent=getPackageManager().getLaunchIntentForPackage(pkg);if(intent==null)return false;intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(intent);return true;}catch(Exception e){status("Android prevented opening "+pkg+"; open manually.");return false;}}
+    private boolean launchPackage(String pkg){
+        try{
+            Intent intent=getPackageManager().getLaunchIntentForPackage(pkg);
+            if(intent!=null){intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(intent);return true;}
+            // Android 13+ can reopen a known previous package without broad package visibility.
+            if(Build.VERSION.SDK_INT>=33){getPackageManager().getLaunchIntentSenderForPackage(pkg).sendIntent(this,0,null,null,null);return true;}
+            return false;
+        }catch(Exception e){status("Android prevented opening "+pkg+"; open manually.");return false;}
+    }
 
     private void requestFastRetry(VisualDeclineDetector.Match visual) {
         if(visual!=null && visual.found &&

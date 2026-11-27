@@ -34,7 +34,7 @@ public final class TouchDiagnosticsActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);SharedPreferences prefs=Prefs.of(this);
         ScrollView scroll=new ScrollView(this);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(20),dp(18),dp(24));root.setBackgroundColor(Color.WHITE);scroll.addView(root);setContentView(scroll);
-        root.addView(text("Touch Diagnostics · v3.1.0",24));
+        root.addView(text("Touch Diagnostics · v3.2.0",24));
         root.addView(text("Test while parked. Tap the green target manually first. Then run a simulated tap and do not touch the screen until the result appears. No Uber offer is touched by these test buttons.",14));
         target=button(root,"X — TAP TEST TARGET",v->{clicks++;counts();line("TARGET CLICK received");});
         target.setContentDescription("Touch test target");target.setTextColor(Color.WHITE);target.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(10,132,66)));target.setMinHeight(dp(65));
@@ -57,7 +57,7 @@ public final class TouchDiagnosticsActivity extends Activity {
         button(root,"Clear report",v->{if(!running){log.setLength(0);downs=ups=clicks=cancels=0;counts();line("Report cleared");}});
         report=text("",12);report.setTextIsSelectable(true);root.addView(report);line(header());
     }
-    private String header(){return "Offer Guardian 3.1.0 | "+Build.MANUFACTURER+" "+Build.MODEL+" | Android "+Build.VERSION.RELEASE+" | build "+Build.DISPLAY+" | "+getResources().getDisplayMetrics().widthPixels+"x"+getResources().getDisplayMetrics().heightPixels;}
+    private String header(){return "Offer Guardian 3.2.0 | "+Build.MANUFACTURER+" "+Build.MODEL+" | Android "+Build.VERSION.RELEASE+" | build "+Build.DISPLAY+" | "+getResources().getDisplayMetrics().widthPixels+"x"+getResources().getDisplayMetrics().heightPixels;}
     private void runTest(int duration,boolean nativeClick){
         if(running||!active||!hasWindowFocus())return;
         OfferAccessibilityService service=OfferAccessibilityService.connectedService();if(service==null){line("Accessibility not connected; enable Offer Guardian first.");return;}

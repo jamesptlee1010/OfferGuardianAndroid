@@ -297,7 +297,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 .putLong(Prefs.HEALTH_HEARTBEAT_TIME,System.currentTimeMillis())
                 .putString(Prefs.HEALTH_STATE,"Accessibility connected")
                 .putInt(Prefs.HEALTH_RECOVERIES,0).apply();
-        status("Accessibility connected. v3.1.0 Touch Diagnostics | Uber Driver-only monitoring + scanner watchdog active.");
+        status("Accessibility connected. v3.2.0 Touch Diagnostics | Uber Driver-only monitoring + scanner watchdog active.");
         handler.removeCallbacks(monitorLoop);
         handler.post(monitorLoop);
     }

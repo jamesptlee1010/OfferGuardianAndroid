@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 public final class OfferDeliveryCount {
     private OfferDeliveryCount() {}
     private static final Pattern HEADING=Pattern.compile(
-            "(?i)(?:\\bpack\\s*(?:&|and)\\s*deliver\\b|\\bdelivery\\b)");
+            "(?i)(?:\\bpack\\s*(?:&|and)\\s*deliver\\b|\\bdelivery\\b|\\bpackage\\b)");
     private static final Pattern SUFFIX=Pattern.compile("^\\s*\\(\\s*([1-9][0-9]?)\\s*\\)");
     public static final class Reading {
         public final int count;

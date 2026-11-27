@@ -44,7 +44,7 @@ public final class OfferRulesActivity extends Activity {
         }
     }
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state);prefs=Prefs.of(this);
+        super.onCreate(state);prefs=getIntent().getBooleanExtra("doordash",false)?Prefs.dashRules(this):Prefs.of(this);
         wasTiered=Prefs.tieredEnabled(prefs);
         TieredOfferRules fromPrefs=Prefs.tieredRules(prefs);
         for(int i=0;i<3;i++){

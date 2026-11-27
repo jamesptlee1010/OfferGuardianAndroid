@@ -8,6 +8,21 @@ final class Prefs {
     private Prefs() {}
     private static final String NAME = "offer_guardian_prefs";
     static final String MONITOR = "monitor";
+    static final String QUICK_CONTROLS = "quick_controls_v21";
+    static final String QUICK_X="quick_position_x_v25", QUICK_Y="quick_position_y_v25", QUICK_LOCK="quick_position_locked_v22";
+    static final String UBER_ENABLED="uber_enabled_v2", DASH_ENABLED="dash_enabled_v2";
+    static final String DASH_DRY="dash_dry_run_v2", DASH_SEPARATE="dash_separate_rules_v2";
+    static final String AUTO_SWITCH="dash_auto_switch_v2", AUTO_RETURN="dash_auto_return_v2";
+    static final String DASH_NOTICE="dash_notice_v2", DASH_NOTICE_DIAG="dash_notice_diag_v24", DASH_LAST_RULE_DIAG="dash_last_rule_diag_v24";
+    static final String SWITCH_OTHER_IDLE="dash_switch_other_idle_v23";
+    static SharedPreferences dashRules(Context context) {
+        return context.getSharedPreferences("guardian_dash_rules_v2",Context.MODE_PRIVATE);
+    }
+    static SharedPreferences rulesFor(Context context, boolean dash) {
+        SharedPreferences p=of(context);
+        SharedPreferences d=dashRules(context);
+        return dash&&p.getBoolean(DASH_SEPARATE,false)&&tieredEnabled(d)?d:p;
+    }
     static final String OVERLAY_ENABLED = "qualifying_overlay_enabled";
     static final String ACCEPT_TRACKING = "accept_tracking_enabled";
     static final String MIGRATED_V08 = "migrated_v08";
@@ -56,6 +71,11 @@ final class Prefs {
     static final String LIVE_STATUS = "live_status";
     static final String LIVE_TIME = "live_time";
     static final String DIAG_HISTORY = "diagnostic_history";
+    static final String HEALTH_HEARTBEAT_TIME = "health_heartbeat_time";
+    static final String HEALTH_SERVICE_ACTIVE = "health_service_active";
+    static final String HEALTH_RECOVERIES = "health_recoveries";
+    static final String HEALTH_SCREENSHOTS = "health_screenshots";
+    static final String HEALTH_STATE = "health_monitor_state";
     static final String MIGRATED_V03 = "migrated_v03";
     static final String MIGRATED_V04 = "migrated_v04";
     static final String LAST_STATUS = "last_status";
@@ -68,7 +88,7 @@ final class Prefs {
     static float threshold(SharedPreferences p) {
         return p.getFloat(THRESHOLD, 30.0f);
     }
-    static boolean tieredEnabled(SharedPreferences p) {return p.getBoolean(TIERED_ACTIVE,false);}
+    static boolean tieredEnabled(SharedPreferences p) {return p.getBoolean(TIERED_ACTIVE,!p.contains(RULE_PRICE)&&!p.contains(RULE_HOURLY)&&!p.contains(THRESHOLD));}
     static String tierKey(int count,String field) {
         if(count<1||count>3)throw new IllegalArgumentException("Tier must be 1, 2 or 3");
         return TIER_KEY+count+"_"+field;
@@ -93,6 +113,13 @@ final class Prefs {
         }
         return new TieredOfferRules(cs,enabled);
     }
+    static void resetHourlyDefaults(Context c){
+        for(SharedPreferences p:new SharedPreferences[]{of(c),dashRules(c)}){
+            SharedPreferences.Editor e=p.edit().putBoolean(TIERED_ACTIVE,true).putBoolean(RULE_HOURLY,true).putFloat(RULE_MIN_HOUR,30f);
+            for(int n=1;n<=3;n++)e.putBoolean(tierKey(n,"enabled"),true).putBoolean(tierKey(n,"hourly_on"),true).putFloat(tierKey(n,"min_hourly"),30f);
+            e.putLong(TIERED_GENERATION,p.getLong(TIERED_GENERATION,0)+1).apply();
+        }
+    }
     static String ruleSummary(SharedPreferences p) {
         return tieredEnabled(p)?tieredRules(p).summary():OfferRuleEngine.summary(rules(p));
     }
@@ -100,8 +127,8 @@ final class Prefs {
         String selection=p.getString(RULE_MODE,"ANY");
         OfferRuleEngine.Mode mode="ALL".equals(selection)?OfferRuleEngine.Mode.ALL:OfferRuleEngine.Mode.ANY;
         return new OfferRuleEngine.Config(
-            p.getBoolean(RULE_PRICE,true),threshold(p),
-            p.getBoolean(RULE_HOURLY,false),p.getFloat(RULE_MIN_HOUR,40.0f),
+            p.getBoolean(RULE_PRICE,false),threshold(p),
+            p.getBoolean(RULE_HOURLY,true),p.getFloat(RULE_MIN_HOUR,30.0f),
             false,0.0,mode,
             p.getBoolean(RULE_DELIVERIES,false),p.getInt(RULE_MIN_DELIVERIES,2));
     }

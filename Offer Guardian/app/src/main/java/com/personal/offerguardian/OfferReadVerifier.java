@@ -53,6 +53,6 @@ public final class OfferReadVerifier {
     }
     private static String normalize(String input) {
         return input==null?"":input.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+"," ").trim().replaceAll("\\s+"," ");
+                .replaceAll("[^a-z0-9]+","");
     }
 }

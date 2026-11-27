@@ -6,7 +6,7 @@ final class UberDeclineRetry {
     private long last=0, lastAttempt=0;
     private boolean fallback=false;
     void observe(String next,long now){
-        if(key.isEmpty()||!key.equals(next)||now-last>90000){attempts=0;fallback=false;lastAttempt=0;}
+        if(key.isEmpty()||now-last>90000){attempts=0;fallback=false;lastAttempt=0;}
         key=next;
         last=now;
     }

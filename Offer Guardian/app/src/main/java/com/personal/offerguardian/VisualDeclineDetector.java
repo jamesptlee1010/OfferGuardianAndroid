@@ -51,6 +51,16 @@ public final class VisualDeclineDetector {
 
     /** Auto-detects the actual card theme from pixels; no manual mode switch. */
     public static Match locate(int[] pixels,int width,int height,int[] light,int[] dark,int tw,int th) {
+        return locateRange(pixels,width,height,light,dark,tw,th,325,1270);
+    }
+    public static Match locateNear(int[] pixels,int width,int height,int[] light,int[] dark,int tw,int th,int previousTop){
+        if(previousTop>=325&&previousTop<1270){
+            Match local=locateRange(pixels,width,height,light,dark,tw,th,Math.max(325,previousTop-9),Math.min(1270,previousTop+10));
+            if(local.found&&local.confidence>=.94)return local;
+        }
+        return locate(pixels,width,height,light,dark,tw,th);
+    }
+    private static Match locateRange(int[] pixels,int width,int height,int[] light,int[] dark,int tw,int th,int begin,int end){
         if(pixels==null||light==null||width!=WIDTH||height!=HEIGHT||
                 pixels.length<width*height||tw!=SIZE||th!=SIZE||light.length<SIZE*SIZE||
                 (dark!=null&&dark.length<SIZE*SIZE))
@@ -58,7 +68,7 @@ public final class VisualDeclineDetector {
         Template a=new Template(light),b=dark==null?null:new Template(dark);
         double best=-1;int cx=-1,cy=-1,bestTop=-1;Theme chosen=Theme.LIGHT;
         int previousTop=-20;
-        for(int top=325;top<1270;top++) {
+        for(int top=begin;top<end;top++) {
             int g=0,black=0,white=0;
             for(int x:ANCHORS) {
                 int p=pixels[top*width+x];

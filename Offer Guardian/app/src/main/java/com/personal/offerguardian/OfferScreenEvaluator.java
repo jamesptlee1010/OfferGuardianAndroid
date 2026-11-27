@@ -76,6 +76,19 @@ public final class OfferScreenEvaluator {
      * content really belongs to an Uber delivery offer before allowing an X tap.
      * A visual match and one price alone are not enough to confirm an offer.
      */
+    public static String offerKind(VisualDeclineDetector.Match visual,List<Line> lines) {
+        boolean exclusive=false,match=false,accept=false;
+        if(visual!=null&&lines!=null)for(Line l:lines){
+            int y=(l.top+l.bottom)/2;
+            String t=l.text.toLowerCase(java.util.Locale.ROOT).trim();
+            if(y>=visual.y-80&&y<=visual.y+65&&t.contains("exclusive"))exclusive=true;
+            if(y>1150&&t.equals("match"))match=true;
+            if(y>1150&&t.equals("accept"))accept=true;
+        }
+        if(exclusive&&!match)return "Exclusive";
+        if(match&&!exclusive&&!accept)return "Trip Radar";
+        return "Delivery (type unconfirmed)";
+    }
     public static boolean hasOfferIdentity(VisualDeclineDetector.Match visual,List<Line> lines) {
         if(visual==null||!visual.found||lines==null)return false;
         boolean delivery=false,earnings=false;
@@ -84,7 +97,7 @@ public final class OfferScreenEvaluator {
             int cy=(line.top+line.bottom)/2;
             if(cy<visual.y-72||cy>visual.y+275)continue;
             String s=line.text.toLowerCase(java.util.Locale.ROOT);
-            if(s.contains("delivery")||s.contains("pack & deliver")||s.contains("pack and deliver"))
+            if(s.contains("delivery")||s.trim().equals("package")||s.contains("pack & deliver")||s.contains("pack and deliver"))
                 delivery=true;
             if((s.contains("earn")&&s.contains("trip"))||s.contains("est. earning")||
                     s.contains("completed trip"))earnings=true;

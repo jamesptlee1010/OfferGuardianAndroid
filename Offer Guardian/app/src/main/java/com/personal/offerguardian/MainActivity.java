@@ -46,7 +46,7 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(10, 132, 66);
     private static final int BG = Color.rgb(246, 249, 247);
     private SharedPreferences prefs;
-    private TextView accessStatus, lastStatus, historyStatus;
+    private TextView accessStatus, lastStatus, historyStatus, monitorHealthStatus;
     private Switch monitorSwitch, autoSwitch, alertSwitch, visualSwitch, visualTestSwitch;
     private TextView rulesSummary;
     private TextView alertVolumeLabel;
@@ -170,14 +170,14 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v0.9.14  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v3.0.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
                 v -> startActivity(new Intent(this,OfferHistoryActivity.class)));
 
         LinearLayout contexts=card(root,"Screen recognition · automatic",
-                "Detects light and dark Uber Driver offer cards automatically. Other foreground apps are not monitored. Declines still require verified offer details and the on-screen X; review diagnostics if an offer is skipped.");
+                "Detects light and dark Uber Driver offer cards automatically. Supports DoorDash on screen and Uber overlays over DoorDash. Declines still require verified offer details and the on-screen X; review diagnostics if an offer is skipped.");
 
         LinearLayout settings = card(root, "Offer Filtering Rules · Concept B",
                 "Set separate payment and estimated A$/hour minimums for 1, 2 and 3 deliveries. Distance does not affect automatic decisions. Choose ANY (OR) or ALL (AND).");
@@ -185,7 +185,7 @@ public final class MainActivity extends Activity {
         settings.addView(rulesSummary,lp(-2,12));
         button(settings,"Open Rules Builder  →",true,
                 v -> startActivity(new Intent(this,OfferRulesActivity.class)));
-        monitorSwitch = toggle(settings, "Monitor offers in Uber Driver", prefs.getBoolean(Prefs.MONITOR, false));
+        monitorSwitch = toggle(settings, "Monitor delivery offers", prefs.getBoolean(Prefs.MONITOR, false));
         autoSwitch = toggle(settings, "Auto-decline offers failing your selected rules", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
         alertSwitch = toggle(settings, "Sound alert for qualifying or uncertain offers", prefs.getBoolean(Prefs.ALERT, true));
         monitorSwitch.setOnCheckedChangeListener((button, checked) -> {
@@ -193,7 +193,7 @@ public final class MainActivity extends Activity {
             if (checked && !accessibilityEnabled()) {
                 new AlertDialog.Builder(this)
                         .setTitle("Enable Accessibility Service")
-                        .setMessage("Enable 'Offer Guardian – Uber Driver monitor' in Accessibility. It analyses visible Uber offer cards only when Uber Driver is foreground, and automatically detects light/dark style. No internet connection is required.")
+                        .setMessage("Enable 'Offer Guardian – delivery monitor' in Accessibility. It analyses visible Uber and DoorDash offer cards in light/dark mode. No internet connection is required.")
                         .setPositiveButton("Open settings", (d, which) -> openAccessibility())
                         .setNegativeButton("Later", null).show();
             }
@@ -211,14 +211,43 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.14",
-                "Approved compact black pill, upper-right of Uber Driver. Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
+        LinearLayout platforms=card(root,"Platforms · dual monitoring","Leave DoorDash open for the most reliable dual monitoring. Uber overlays are recognised separately from the foreground app. Notification switching is experimental; it avoids known active deliveries and competing offers. No automatic acceptance.");
+        android.widget.RadioGroup modes=new android.widget.RadioGroup(this);
+        modes.setOrientation(android.widget.RadioGroup.VERTICAL);
+        String[] modeNames={"Monitoring off (both platforms)","Uber Eats only · reduced resources","DoorDash only · reduced resources","Both platforms · dual monitoring"};
+        int currentMode=(prefs.getBoolean(Prefs.UBER_ENABLED,true)?1:0)|(prefs.getBoolean(Prefs.DASH_ENABLED,true)?2:0);
+        int[] modeIds=new int[4];
+        for(int i=0;i<4;i++){android.widget.RadioButton b=new android.widget.RadioButton(this);modeIds[i]=View.generateViewId();b.setId(modeIds[i]);b.setText(modeNames[i]);modes.addView(b);}
+        modes.check(modeIds[currentMode]);platforms.addView(modes);
+        modes.setOnCheckedChangeListener((group,id)->{for(int i=0;i<4;i++)if(modeIds[i]==id){prefs.edit().putBoolean(Prefs.UBER_ENABLED,(i&1)!=0).putBoolean(Prefs.DASH_ENABLED,(i&2)!=0).apply();break;}});
+        Switch dashTest=toggle(platforms,"DoorDash TEST ONLY (no decline taps)",prefs.getBoolean(Prefs.DASH_DRY,true));
+        dashTest.setOnCheckedChangeListener((b,on)->{
+            if(!on&&prefs.getBoolean(Prefs.DASH_DRY,true)) {
+                dashTest.setChecked(true);
+                new AlertDialog.Builder(this).setTitle("Enable DoorDash decline automation?").setMessage("First verify recognition on real offers while parked. DoorDash requires two verified taps. Automation may affect your account. Never enable if prohibited by your agreement.").setNegativeButton("Cancel",null).setPositiveButton("Enable",(d,w)->{prefs.edit().putBoolean(Prefs.DASH_DRY,false).apply();dashTest.setChecked(false);}).show();
+            } else prefs.edit().putBoolean(Prefs.DASH_DRY,on).apply();
+        });
+        toggle(platforms,"Separate DoorDash rules (after saving DoorDash tiers)",prefs.getBoolean(Prefs.DASH_SEPARATE,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.DASH_SEPARATE,on).apply());
+        button(platforms,"DoorDash rules builder",false,v->startActivity(new Intent(this,OfferRulesActivity.class).putExtra("doordash",true)));
+        toggle(platforms,"Open DoorDash on New Delivery! notification (experimental)",prefs.getBoolean(Prefs.AUTO_SWITCH,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.AUTO_SWITCH,on).apply());
+        toggle(platforms,"Allow switching from other apps while waiting",prefs.getBoolean(Prefs.SWITCH_OTHER_IDLE,true)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.SWITCH_OTHER_IDLE,on).apply());
+        toggle(platforms,"Return to previous app after DoorDash decline",prefs.getBoolean(Prefs.AUTO_RETURN,true)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.AUTO_RETURN,on).apply());
+        button(platforms,"Enable notification access (required for auto switching)",false,v->startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        button(platforms,"Reconnect notification listener",false,v->{android.service.notification.NotificationListenerService.requestRebind(new android.content.ComponentName(this,OfferNotificationListener.class));refresh();});
+        button(platforms,"Apply $30/hr to all six delivery tiers",false,v->new AlertDialog.Builder(this).setTitle("Set hourly rules to $30/hr?").setMessage("Enables the hourly rule and all delivery tiers on both platforms. Keeps your other rules and AND/OR choices.").setNegativeButton("Cancel",null).setPositiveButton("Apply",(d,w)->{Prefs.resetHourlyDefaults(this);refresh();}).show());
+        button(platforms,"Open DoorDash",false,v->{Intent i=getPackageManager().getLaunchIntentForPackage(OfferSurfacePolicy.DOORDASH);if(i!=null)startActivity(i);else Toast.makeText(this,"DoorDash not found",Toast.LENGTH_SHORT).show();});
+        LinearLayout quick=card(root,"Quick controls · D / DF / DR","Movable vertical floating pill (default right edge). Hold and drag any button to move the whole pill. D opens DoorDash; DF pauses orders and returns to Uber; DR resumes a paused Dash. Use only while safely parked. DF never ends a scheduled Dash; a pause may expire after 35 minutes.");
+        toggle(quick,"Enable floating quick controls",prefs.getBoolean(Prefs.QUICK_CONTROLS,false)).setOnCheckedChangeListener((b,on)->{prefs.edit().putBoolean(Prefs.QUICK_CONTROLS,on).apply();if(on&&!accessibilityEnabled())openAccessibility();});
+        toggle(quick,"Lock quick controls position",prefs.getBoolean(Prefs.QUICK_LOCK,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.QUICK_LOCK,on).apply());
+        button(quick,"Reset quick controls position",false,v->{prefs.edit().remove(Prefs.QUICK_X).remove(Prefs.QUICK_Y).apply();Toast.makeText(this,"Quick controls reset to right edge",Toast.LENGTH_SHORT).show();});
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v3.0.0",
+                "Compact black rate pill, upper-right on either platform (below DoorDash Decline). Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.14",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v3.0.0",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -308,9 +337,9 @@ public final class MainActivity extends Activity {
 
         LinearLayout visual = card(root, "Recognise Uber offers on screen",
                 "No button learning required. Detects the grey-square X and either a green or black offer-card border, then reads the price below it.");
-        visualSwitch = toggle(visual, "Detect grey X and price from Uber offer screenshots",
+        visualSwitch = toggle(visual, "Recognise Uber and DoorDash offer screenshots",
                 prefs.getBoolean(Prefs.VISUAL_X, false));
-        visualTestSwitch = toggle(visual, "TEST ONLY — locate X without tapping (recommended first)",
+        visualTestSwitch = toggle(visual, "TEST ONLY — recognise offers without tapping (recommended first)",
                 prefs.getBoolean(Prefs.VISUAL_DRY_RUN, true));
         visualSwitch.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(Prefs.VISUAL_X, checked)
@@ -326,8 +355,8 @@ public final class MainActivity extends Activity {
             if (!checked && prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
                 visualTestSwitch.setChecked(true);
                 new AlertDialog.Builder(this)
-                        .setTitle("Enable real Uber X taps?")
-                        .setMessage("Only do this after you have verified that TEST ONLY reports a correct X location on multiple real offers. A visual recognition error could tap the wrong part of the Uber screen. Using automation may affect your Uber account.")
+                        .setTitle("Enable real decline taps?")
+                        .setMessage("Only do this after verifying TEST ONLY on multiple real offers while safely parked. Recognition errors may tap the wrong control. Automation may affect delivery platform accounts. DoorDash has its own additional test-only switch.")
                         .setNegativeButton("Keep TEST ONLY", null)
                         .setPositiveButton("I understand — allow taps", (d,w) -> {
                             prefs.edit().putBoolean(Prefs.VISUAL_DRY_RUN, false).apply();
@@ -343,6 +372,8 @@ public final class MainActivity extends Activity {
                 13,MUTED,false),lp(-2,0));
 
         LinearLayout recent = card(root, "Live diagnostics", "Shows why offers qualify, whether the overlay appears, and whether a pickup assignment was verified. No screenshots are stored.");
+        monitorHealthStatus=text("Monitor health: no heartbeat yet.",13,MUTED,false);
+        recent.addView(monitorHealthStatus,lp(-2,12));
         lastStatus = text("No offer detected yet.", 14, INK, false);
         recent.addView(lastStatus, lp(-2, 12));
         recent.addView(text("Recent detection steps",14,MUTED,true),lp(-2,6));
@@ -350,7 +381,12 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v0.9.14\n"+
+            String report="Offer Guardian v3.0.0\n"+
+                    monitorHealthSummary()+"\n"+
+                    "Notification listener: "+OfferNotificationListener.connectionStatus(this)+"\nNotification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\n"+
+                    "Last DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n"+
+                    "Last Uber rule decision: "+prefs.getString("uber_last_rule_v25","No parsed offer")+"\n"+
+                    "Last unresolved Uber windows: "+prefs.getString("uber_last_windows_v25","None recorded")+"\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {
@@ -362,7 +398,7 @@ public final class MainActivity extends Activity {
         LinearLayout note = card(root, "Important limits", null);
         note.addView(text("The app checks a fresh screenshot for a grey X, matching green/black card border, and a single price in that card. Any uncertain stage means NO TAP. Keep TEST ONLY on until results are verified. It never accepts orders. Automation can affect account standing.",
                 13, MUTED, false), lp(-2, 0));
-        root.addView(text("Independent personal utility; not affiliated with or endorsed by Uber.",
+        root.addView(text("Independent personal utility; not affiliated with or endorsed by Uber or DoorDash.",
                 11, MUTED, false), lp(-2, 0));
         refresh();
     }
@@ -410,20 +446,43 @@ public final class MainActivity extends Activity {
         } else startActivity(intent);
     }
 
+    private String monitorHealthSummary() {
+        long last=prefs.getLong(Prefs.HEALTH_HEARTBEAT_TIME,0L);
+        String state=prefs.getString(Prefs.HEALTH_STATE,"no service heartbeat yet");
+        int recoveries=prefs.getInt(Prefs.HEALTH_RECOVERIES,0);
+        int screenshots=prefs.getInt(Prefs.HEALTH_SCREENSHOTS,0);
+        if(last<=0) return "Service heartbeat: none recorded since installing this version";
+        long seconds=Math.max(0,(System.currentTimeMillis()-last)/1000L);
+        boolean service=prefs.getBoolean(Prefs.HEALTH_SERVICE_ACTIVE,false);
+        String health= !service ? "SERVICE STOPPED / UNBOUND" :
+                seconds>100 ? "HEARTBEAT STALE: Android may have suspended service" :
+                "Heartbeat OK";
+        return health+" ("+seconds+"s ago) | "+state+
+                " | screenshots="+screenshots+" | recoveries="+recoveries;
+    }
+
     private void refresh() {
         if (rulesSummary!=null)rulesSummary.setText(Prefs.ruleSummary(prefs));
+        if(monitorHealthStatus!=null) {
+            monitorHealthStatus.setText(monitorHealthSummary());
+            long hb=prefs.getLong(Prefs.HEALTH_HEARTBEAT_TIME,0L);
+            boolean stale=hb>0 && System.currentTimeMillis()-hb>100000L;
+            monitorHealthStatus.setTextColor(stale ||
+                    !prefs.getBoolean(Prefs.HEALTH_SERVICE_ACTIVE,true)?
+                    Color.rgb(181,92,32):ACCENT);
+        }
         if (accessStatus == null) return;
         boolean access = accessibilityEnabled();
         accessStatus.setText(access ? "✓ Accessibility service ENABLED" : "! Accessibility service NOT ENABLED");
         accessStatus.setTextColor(access ? Color.rgb(22, 120, 79) : Color.rgb(181, 92, 32));
         long timestamp = prefs.getLong(Prefs.LIVE_TIME, 0);
-        if (timestamp == 0) lastStatus.setText("No live scan yet. Enable Monitoring and Accessibility; open Uber Driver.");
+        if (timestamp == 0) lastStatus.setText("No live scan yet. Enable Monitoring and Accessibility; open Uber Driver or DoorDash.");
         else {
             String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM)
                     .format(new Date(timestamp));
             lastStatus.setText(time+"\n"+prefs.getString(Prefs.LIVE_STATUS,"No scan status"));
         }
-        if(historyStatus!=null) historyStatus.setText(prefs.getString(Prefs.DIAG_HISTORY,"No scan activity yet."));
+        if(historyStatus!=null) historyStatus.setText("Notification listener: "+OfferNotificationListener.connectionStatus(this)+"\nNotification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\nLast DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n\n"+prefs.getString(Prefs.DIAG_HISTORY,"No scan activity yet."));
     }
 
     @Override protected void onResume() {

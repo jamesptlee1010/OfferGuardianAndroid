@@ -1,10 +1,7 @@
-# Install OfferGuardian v0.9.14 — Uber Driver only
-
-1. Extract `OfferGuardian_v0.9.14_Uber_Only_Source.zip` on your computer.
-2. Upload its contents to the root of your existing GitHub repository, preserving `.github/workflows/build-apk.yml`, `app/`, `tests_bundle.zip`, and the Gradle project files.
-3. Delete any obsolete source files left in the existing repository, especially `app/src/main/java/com/personal/offerguardian/WazeFastVerifier.java`; merely uploading updated files does not delete old ones.
-4. In **Actions**, run **Build Offer Guardian APK** and download the installable APK artifact.
-5. Install over the existing app if signing permits. Export Offer History before uninstalling, because uninstalling clears local History.
-6. Start in **TEST ONLY**. This version deliberately does **not** scan or decline offers when Waze or any other application is foreground.
-
-This is the Android **source ZIP**, not a precompiled APK. Compile it in GitHub and verify it on your phone.
+# GitHub build guide — Offer Guardian 3.0.0
+1. Extract `OfferGuardian_v3.0.0_Stability_Source.zip`.
+2. Replace the repository root with the extracted contents. Include hidden `.github/workflows/build-apk.yml`. The small `tests_bundle.zip` is automatically expanded by Actions; do not expand it before browser upload.
+3. Remove redundant old source copies and workflows. Do not delete any signing configuration used for your installed app.
+4. In GitHub select Actions → Build Offer Guardian APK → Run workflow. The workflow runs host regression checks and compiles the debug APK with the Android SDK.
+5. Download the `OfferGuardian-v3.0.0-installable-APK` artifact, extract the APK, and install. Export History first; different debug signing keys may prevent an in-place upgrade.
+6. Follow README test-only and live test instructions before enabling automatic declines. Android compilation and device testing are not yet verified locally.

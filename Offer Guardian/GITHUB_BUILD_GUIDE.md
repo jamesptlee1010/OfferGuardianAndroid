@@ -1,9 +1,7 @@
-# OfferGuardian v0.9.14 — GitHub build guide
-
-The source now monitors only Uber Driver while the Uber Driver app is foreground. Idle Uber polling remains at approximately 1.7 seconds; bounded fast re-reads remain for active offer verification.
-
-Extract the ZIP and upload its contents to the root of your repository, preserving `.github` and other folders. The GitHub workflow expands `tests_bundle.zip` automatically, runs host-side checks, and builds an installable debug APK.
-
-**Delete obsolete Waze source files and older nested projects from your existing GitHub repository.** The latest source is versionName `0.9.14`, versionCode `22`.
-
-Export History before uninstalling a previously installed APK. After installing, begin with TEST ONLY and test actual Uber Driver foreground behaviour.
+# GitHub build guide — Offer Guardian 3.0.0
+1. Extract `OfferGuardian_v3.0.0_Stability_Source.zip`.
+2. Replace the repository root with the extracted contents. Include hidden `.github/workflows/build-apk.yml`. The small `tests_bundle.zip` is automatically expanded by Actions; do not expand it before browser upload.
+3. Remove redundant old source copies and workflows. Do not delete any signing configuration used for your installed app.
+4. In GitHub select Actions → Build Offer Guardian APK → Run workflow. The workflow runs host regression checks and compiles the debug APK with the Android SDK.
+5. Download the `OfferGuardian-v3.0.0-installable-APK` artifact, extract the APK, and install. Export History first; different debug signing keys may prevent an in-place upgrade.
+6. Follow README test-only and live test instructions before enabling automatic declines. Android compilation and device testing are not yet verified locally.

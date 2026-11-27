@@ -1,4 +1,4 @@
-# Offer Guardian 3.3.0 — Uber Eats only
+# Offer Guardian 3.3.1 — Uber Eats only
 
 Native Android utility for reading Uber Driver offer cards locally. This rebuild uses the dedicated Uber-only v0.9.15 scanner architecture with selected v2.6.1 financial, OCR, visual detection and history improvements. No DoorDash service, notification listener, application switching, floating quick controls, navigation or GPS integration. No automatic acceptance.
 
@@ -6,7 +6,7 @@ Native Android utility for reading Uber Driver offer cards locally. This rebuild
 
 1. Export Offer History as a backup before upgrading.
 2. Extract the complete source ZIP to a new folder. In GitHub, **replace the entire old source project**, including `app/` and `.github/workflows/`. Do not simply overlay files: removed Java classes in a v2.x tree must be deleted, or Gradle will try to compile them. Keep any unrelated repositories/files.
-3. Run the **Build Offer Guardian APK** workflow. It selects a project with versionName `3.3.0`, expands `tests_bundle.zip`, runs host-side regressions, compiles and verifies the APK. Download the artifact `OfferGuardian-v3.3.0-installable-APK` only after a green build.
+3. Run the **Build Offer Guardian APK** workflow. It selects a project with versionName `3.3.1`, expands `tests_bundle.zip`, runs host-side regressions, compiles and verifies the APK. Download the artifact `OfferGuardian-v3.3.1-installable-APK` only after a green build.
 4. Install the resulting APK over the existing installation only if Android accepts the same signing certificate. The app uses the existing application ID and SQLite schema, so an in-place upgrade preserves existing history and preferences. If Android requires uninstalling, export history first; uninstalling erases private app data. Re-import the CSV after reinstalling.
 5. In Offer Guardian enable the Uber-only accessibility service and monitoring. Existing auto-decline and TEST ONLY preferences are preserved on upgrade. Fresh installs require explicit opt-in to automatic declines. Check TEST ONLY first while safely parked. No notification listener access is necessary.
 
@@ -20,7 +20,7 @@ Native Android utility for reading Uber Driver offer cards locally. This rebuild
 - Test while parked; use the same settings and offer type when comparing phones. Existing fresh-screen, rule and window safeguards and retry budget remain. There is no automatic acceptance. A positive result on the diagnostic button does not prove Uber will respond.
 - The local vector launcher icon avoids the old framework icon reference. This is a source build, not a locally compiled APK.
 
-## Shizuku diagnostic integration (3.3.0)
+## Shizuku diagnostic integration (3.3.1)
 
 1. Start Shizuku 13.5 in ADB mode on your phone. Open Offer Guardian → Shizuku connection & touch test.
 2. Tap Authorise Shizuku and approve only this trusted app, then return to the diagnostics screen.
@@ -40,3 +40,6 @@ Use a fresh GitHub repository with the included workflow; upload the contents of
 - Existing database, history filters, manual outcomes, CSV import/export, duplicate detection and approval-based cleanup. Historical records from earlier versions (including previous platforms) are preserved; no new non-Uber offers are recorded. A 60-second history deduplication heuristic can confuse genuinely identical offers; review before deleting.
 
 See BUILD_TEST_RESULTS.md for actual host-side checks and limitations.
+
+## v3.3.1 focus compatibility
+Android 16 queries `dumpsys window displays` first; older versions use `windows`. The alternate query is tried only when the focus field is absent. Explicit null, other-app or multiple focus records remain blocked. Blocked requests retain the existing cooldown without consuming dispatched-attempt budget. A command timeout or uncertain result still stops further attempts for that offer. No changes to financial rules or recognition.

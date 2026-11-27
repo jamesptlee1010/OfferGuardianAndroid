@@ -24,7 +24,7 @@ final class ShizukuLiveClient {
     private long nextBind;
     ShizukuLiveClient(Context context,Handler handler,Reporter status){
         this.handler=handler;this.status=status;
-        args=new Shizuku.UserServiceArgs(new ComponentName(context,LiveDeclineInput.class)).daemon(false).processNameSuffix("live_decline").version(36);
+        args=new Shizuku.UserServiceArgs(new ComponentName(context,LiveDeclineInput.class)).daemon(false).processNameSuffix("live_decline").version(37);
     }
     private boolean permitted(){try{return Shizuku.pingBinder()&&Shizuku.getUid()==2000&&Shizuku.getVersion()>=13&&Shizuku.checkSelfPermission()==PackageManager.PERMISSION_GRANTED&&Shizuku.checkRemotePermission("android.permission.INJECT_EVENTS")==PackageManager.PERMISSION_GRANTED;}catch(RuntimeException e){return false;}}
     boolean ready(){return !closed&&!busy&&remote!=null&&remote.asBinder().isBinderAlive()&&permitted();}

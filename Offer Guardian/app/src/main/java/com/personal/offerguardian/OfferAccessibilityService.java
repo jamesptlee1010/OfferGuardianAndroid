@@ -301,7 +301,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 .putLong(Prefs.HEALTH_HEARTBEAT_TIME,System.currentTimeMillis())
                 .putString(Prefs.HEALTH_STATE,"Accessibility connected")
                 .putInt(Prefs.HEALTH_RECOVERIES,0).apply();
-        status("Accessibility connected. v3.3.0 Touch Diagnostics | Uber Driver-only monitoring + scanner watchdog active.");
+        status("Accessibility connected. v3.3.1 Touch Diagnostics | Uber Driver-only monitoring + scanner watchdog active.");
         handler.removeCallbacks(monitorLoop);
         handler.post(monitorLoop);
     }
@@ -1072,12 +1072,14 @@ public final class OfferAccessibilityService extends AccessibilityService {
         final long historyId=lastHistoryId;
         final long deadline=lastCaptureAt+1900;
         final long generation=++gestureGeneration;
-        final int attempt=retries.attempt(now);
+        final int attempt=retries.attempts()+1;
+        retries.defer(now);
         gestureBusy=true;
         boolean sent=shizukuLive.send(Math.round(x),Math.round(y),width,height,deadline,result->{
             if(generation!=gestureGeneration)return;
-            gestureBusy=false;autoDeclineSent=!retries.canAttempt();
+            gestureBusy=false;retries.defer(SystemClock.elapsedRealtime());autoDeclineSent=!retries.canAttempt();
             if(result.startsWith("DISPATCHED")){
+                retries.attempt(SystemClock.elapsedRealtime());
                 try(OfferHistoryStore store=new OfferHistoryStore(this)){store.markDeclineAttempt(historyId);}catch(Exception ignored){}
                 autoDeclineSent=true;
             }else if(result.startsWith("UNKNOWN")){
@@ -1085,10 +1087,10 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 while(retries.canAttempt())retries.attempt(SystemClock.elapsedRealtime());
                 autoDeclineSent=true;
             }
-            status(String.format(Locale.US,"A$%.2f: Shizuku %s | attempt %d/3 | %s",payout,result,attempt,timing));
+            status(String.format(Locale.US,"A$%.2f: Shizuku %s | dispatched budget %d/3 | %s",payout,result,retries.attempts(),timing));
         });
         if(!sent){gestureBusy=false;status("Shizuku input not submitted; no fallback");return;}
-        status(String.format(Locale.US,"A$%.2f: Shizuku decline requested; physical target %.1f,%.1f | attempt %d/3",payout,x,y,attempt));
+        status(String.format(Locale.US,"A$%.2f: Shizuku decline requested; physical target %.1f,%.1f | proposed attempt %d/3",payout,x,y,attempt));
         handler.postDelayed(()->{if(gestureBusy&&generation==gestureGeneration){gestureBusy=false;gestureGeneration++;while(retries.canAttempt())retries.attempt(SystemClock.elapsedRealtime());autoDeclineSent=true;status("Shizuku result timed out; no more taps for this offer");}},4500);
     }
 

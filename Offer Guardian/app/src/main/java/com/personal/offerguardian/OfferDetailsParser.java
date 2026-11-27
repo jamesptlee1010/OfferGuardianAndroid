@@ -66,7 +66,6 @@ public final class OfferDetailsParser {
             String s=line.text.trim();
             String lower=s.toLowerCase(Locale.ROOT);
             if(lower.contains("pack")&&lower.contains("deliver"))type="Pack & Deliver";
-            else if(lower.equals("package"))type="Package";
             else if(s.matches("(?i).*delivery\\s*\\(\\d+\\).*"))type="Delivery (multiple)";
             Matcher items=ITEM_COUNT.matcher(s);
             if(items.find())try{itemCount=Integer.parseInt(items.group(1));}catch(NumberFormatException ignored){}

@@ -97,7 +97,7 @@ public final class OfferScreenEvaluator {
             int cy=(line.top+line.bottom)/2;
             if(cy<visual.y-72||cy>visual.y+275)continue;
             String s=line.text.toLowerCase(java.util.Locale.ROOT);
-            if(s.contains("delivery")||s.trim().equals("package")||s.contains("pack & deliver")||s.contains("pack and deliver"))
+            if(s.contains("delivery")||s.contains("pack & deliver")||s.contains("pack and deliver"))
                 delivery=true;
             if((s.contains("earn")&&s.contains("trip"))||s.contains("est. earning")||
                     s.contains("completed trip"))earnings=true;

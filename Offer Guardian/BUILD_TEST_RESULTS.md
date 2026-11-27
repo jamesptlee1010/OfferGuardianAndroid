@@ -1,6 +1,7 @@
-# v3.0.0 experimental source build
-- Existing screen evaluator: 11 tests passed.
-- Existing watchdog: 18 assertions passed.
-- Seven supplied images: X detection passed on all seven after WebP-to-JPEG conversion and normalization to 686x1536. Manually transcribed OCR line fixtures passed price validity, offer identity, duration and count checks. This is not a live ML Kit OCR test.
-- Android compilation and live Oppo/Nubia gesture delivery not tested: Android SDK/Gradle unavailable in this environment.
-- This is a conservative reset of capture scheduling and gesture coordinate validation, not a complete replacement of the existing OCR/financial/session engine. DoorDash shares the serialized capture scheduler. A permanently missing Android callback now requires restarting the accessibility service instead of launching overlapping requests.
+# 3.1.0 host-side verification
+
+The GitHub workflow's host-side regression/check steps (including the new touch method tests) were executed locally using JDK 21. All 28 steps passed; TouchMethodStandaloneTest passed 24 assertions. The workflow itself uses Java 17 for its Android build.
+
+All 38 production Java files passed javac parser syntax checks; all Android XML files parsed successfully. Compared to the v3.0.0 source archive, only MainActivity and OfferAccessibilityService were changed among existing Java classes; the two new classes are TouchMethod and TouchDiagnosticsActivity. Financial recognition/rules/history source files were unchanged.
+
+Limitations: no Android SDK/Gradle build available in this environment. No Android APK compilation, signing, installation, physical or simulated touch testing on a phone, or actual Uber decline verification has been performed. The self-owned diagnostic button must be tested on both devices. A blocked test or a completed gesture without a target click is not a successful touch test.

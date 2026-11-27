@@ -44,7 +44,7 @@ public final class OfferRulesActivity extends Activity {
         }
     }
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state);prefs=getIntent().getBooleanExtra("doordash",false)?Prefs.dashRules(this):Prefs.of(this);
+        super.onCreate(state);prefs=Prefs.of(this);
         wasTiered=Prefs.tieredEnabled(prefs);
         TieredOfferRules fromPrefs=Prefs.tieredRules(prefs);
         for(int i=0;i<3;i++){
@@ -222,7 +222,7 @@ public final class OfferRulesActivity extends Activity {
                     .putBoolean(Prefs.tierKey(n,"price_on"),d.priceOn)
                     .putFloat(Prefs.tierKey(n,"min_price"),Float.isFinite((float)c.minPrice)?(float)c.minPrice:30.0f)
                     .putBoolean(Prefs.tierKey(n,"hourly_on"),d.hourOn)
-                    .putFloat(Prefs.tierKey(n,"min_hourly"),Float.isFinite((float)c.minHourly)?(float)c.minHourly:40.0f)
+                    .putFloat(Prefs.tierKey(n,"min_hourly"),Float.isFinite((float)c.minHourly)?(float)c.minHourly:30.0f)
                     .putBoolean(Prefs.tierKey(n,"km_on"),false)
                     .putBoolean(Prefs.tierKey(n,"distance_on"),false)
                     .putString(Prefs.tierKey(n,"mode"),d.mode.name());

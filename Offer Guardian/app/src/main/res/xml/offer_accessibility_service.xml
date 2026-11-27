@@ -6,6 +6,6 @@
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
     android:canTakeScreenshot="true"
-    android:packageNames="com.ubercab.driver,com.doordash.driverapp"
+    android:packageNames="com.ubercab.driver,com.personal.offerguardian"
     android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
     android:description="@string/accessibility_description" />

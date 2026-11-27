@@ -136,15 +136,10 @@ public final class OfferHistoryActivity extends Activity {
 
         LinearLayout searchRow=row();root.addView(searchRow,box(-2,9));
         search=new EditText(this);search.setSingleLine(true);search.setTextSize(14);
-        search.setHint("Search pickup, destination or platform");
+        search.setHint("Search pickup or destination");
         search.setPadding(dp(11),0,dp(11),0);
         search.setBackground(bg(Color.WHITE,BORDER,10));
         searchRow.addView(search,new LinearLayout.LayoutParams(-1,dp(49)));
-        LinearLayout platformRow=row();root.addView(platformRow,box(-2,7));
-        for(String label:new String[]{"All platforms","Uber","DoorDash"}) {
-            TextView b=softButton(label,v->search.setText("All platforms".equals(label)?"":"@"+label));
-            platformRow.addView(b,new LinearLayout.LayoutParams(0,dp(39),1));
-        }
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s,int st,int cnt,int aft) {}
             @Override public void onTextChanged(CharSequence s,int start,int before,int count) {

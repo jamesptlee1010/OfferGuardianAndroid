@@ -178,6 +178,8 @@ public final class OfferHistoryActivity extends Activity {
         TextView importButton=softButton("↑ Import History",v->importCsv());
         LinearLayout.LayoutParams importLp=new LinearLayout.LayoutParams(0,dp(43),1);
         importLp.leftMargin=dp(9);actions.addView(importButton,importLp);
+        TextView dedup=softButton("Scan for duplicate offers",v->previewDuplicates());
+        root.addView(dedup,box(42,7));
         TextView wipe=softButton("Clear history",v->confirmClear());
         root.addView(wipe,box(42,14));
         results=col();root.addView(results,box(-2,8));
@@ -687,6 +689,30 @@ public final class OfferHistoryActivity extends Activity {
             .setItems(statuses,(d,which)->{
                 store.setOutcome(id,values[which]);refreshList();
             }).setNegativeButton("Cancel",null).show();
+    }
+    private void previewDuplicates(){
+        final java.util.List<OfferHistoryStore.DuplicateGroup> groups;
+        try{groups=store.findDuplicates();}catch(Exception e){Toast.makeText(this,"Could not scan history",Toast.LENGTH_LONG).show();return;}
+        if(groups.isEmpty()){new AlertDialog.Builder(this).setTitle("Duplicate scan").setMessage("No high-confidence duplicates found. Uncertain records are kept.").setPositiveButton("OK",null).show();return;}
+        String[] labels=new String[groups.size()];boolean[] selected=new boolean[groups.size()];
+        for(int i=0;i<groups.size();i++){
+            OfferHistoryStore.DuplicateGroup g=groups.get(i);OfferHistoryStore.Item k=g.keeper();
+            labels[i]=String.format(java.util.Locale.US,"A$%.2f • %d min • %.1f km\n%s → %s\n%s • %d records; remove %d",k.cents/100.0,k.minutes,k.metres/1000.0,k.pickup,k.destination,new java.text.SimpleDateFormat("dd MMM HH:mm:ss",java.util.Locale.US).format(new java.util.Date(k.seenAt)),g.rows.size(),g.rows.size()-1);
+        }
+        AlertDialog review=new AlertDialog.Builder(this).setTitle("Review suspected duplicates ("+groups.size()+" groups)")
+            .setMultiChoiceItems(labels,selected,(d,which,checked)->selected[which]=checked)
+            .setNegativeButton("Cancel",null).setNeutralButton("Select all",null)
+            .setPositiveButton("Review removal",(d,w)->{
+                java.util.List<OfferHistoryStore.DuplicateGroup> chosen=new java.util.ArrayList<>();int count=0;
+                for(int i=0;i<selected.length;i++)if(selected[i]){chosen.add(groups.get(i));count+=groups.get(i).rows.size()-1;}
+                if(count==0){Toast.makeText(this,"No groups selected",Toast.LENGTH_SHORT).show();return;}
+                new AlertDialog.Builder(this).setTitle("Remove up to "+count+" duplicate records?")
+                    .setMessage("Export CSV first if you need a backup. One record per selected group is kept, including any single confirmed outcome. Changed or conflicting groups are skipped. Statistics are refreshed.")
+                    .setNegativeButton("Cancel",null).setPositiveButton("Remove duplicates",(dd,ww)->{
+                        try{int removed=store.mergeDuplicates(chosen);refreshList();Toast.makeText(this,removed+" duplicate records removed",Toast.LENGTH_LONG).show();}catch(Exception e){Toast.makeText(this,"Duplicate cleanup failed; no changes committed",Toast.LENGTH_LONG).show();}
+                    }).show();
+            }).create();
+        review.show();review.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{for(int i=0;i<selected.length;i++){selected[i]=true;review.getListView().setItemChecked(i,true);}});
     }
     private void confirmClear() {
         new AlertDialog.Builder(this).setTitle("Delete all offer history?")

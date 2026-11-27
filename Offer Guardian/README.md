@@ -1,27 +1,20 @@
-# Offer Guardian 2.6.0 — Visual overlay fallback
+# Offer Guardian 2.6.1 — Stability and history
 
-Upgrade from v2.4.0, with the same app ID and local history database. Existing thresholds, delivery tiers, settings and test-only switches are retained. No automatic acceptance. No new GPS or Internet permission.
+Full Android source project based on v2.6.0. Existing local database, saved rules, history import/export, alert settings, draggable D/DF/DR dock and Uber-over-DoorDash visual fallback retained. No automatic acceptance or new permissions. Read `CHANGELOG_v2.6.1.md` and `BUILD_TEST_RESULTS.md` for details and limits.
 
-## Changes
-- Vertical D / DF / DR dock (U removed). Default right side, long-press 450 ms to drag the whole dock, save position, lock/reset available. Old horizontal position is reset for the new layout.
-- D opens DoorDash; DF pauses the current Dash and returns to Uber (does not end the Dash); DR resumes a paused Dash. All require verified controls. Use only while safely parked.
-- Uber overlay handler now classifies Exclusive and Trip Radar, preserves the financial session across window ID changes, logs ownership and rule details, and attempts verified accessibility clicks before gesture fallback. Up to three attempts per continuous visible card sequence, with a cooldown, fresh verification and a one-time optional native Uber fallback. If the owner cannot be verified, never tap the overlay. If fallback opens Uber, you may need to switch back manually. Visual absence is not proof of platform decline.
-- DoorDash recognises Customer drop-off, Drop off N orders and Multiple drop-offs (N stops). Separate financial parsing from action identity. Qualifying display/alerts are independent of whether the decline control is readable. Conflicting accessibility/OCR readings prevent automated declines. Near-hourly-threshold declines need extra agreeing readings (or corroborating accessibility and OCR). Previously qualifying cards with matching timer/merchant continuity are protected against contradictory later readings. Existing AND/OR and tier rules are unchanged.
-- DoorDash's two-stage decline remains guarded; shortened scan schedule and bounded verified retry on a cancelled gesture. New Delivery! notifications can use a fresh package-verified notification activity intent, with explicit app launch fallback. Switching must be enabled and may still be prevented by Android or active-delivery safeguards.
-- Scanner targets: 500 ms normal poll, 450 ms minimum capture interval, 360 ms fast confirmation interval (rather than 300 ms to leave a margin above Android's approximately 333 ms screenshot limit). Actual OCR and interaction speeds vary.
-- Copy diagnostics includes latest Uber rule reading, unresolved window packages/IDs/bounds, DoorDash effective rule reasoning and notification switching results. No screenshots saved or included in the source archive.
+## New in this version
+- Preserve a verified pending DoorDash decline across ordinary OCR changes; prioritize its exact confirmation button and keep deadline/ownership checks.
+- Space Uber retries, vary verified gesture hold, correct bounded hour/minute OCR lookalikes, and try alternate contrast/size on payout OCR failures.
+- Select Uber Eats only, DoorDash only, both or neither in Platforms. Single-platform paths skip the disabled platform's work. The D/DF/DR dock is hidden in Uber-only mode. Shared OCR is still used; actual RAM savings depend on the device.
+- Bound outstanding OCR work and reuse the pixel buffer to reduce allocation churn.
+- History deduplication uses complete financial values, nearby timestamps, exact destination and similar pickup, never as permission to tap. Existing suspected duplicates require review and approval. Export history before deletion. Distinct offers with identical details within 60 seconds may be indistinguishable without a platform offer ID.
+- $30/hour enabled by default for single, double and triple delivery tiers on both platforms. Saved custom rules remain unchanged; use Apply $30/hr to all six delivery tiers if desired.
 
 ## Build and install
-1. Export offer history before upgrading. Keep the same signing key for an in-place upgrade.
-2. Extract the archive and upload all root contents to the existing GitHub project (including hidden `.github` workflow). Keep only one active version of the workflow. `tests_bundle.zip` is expanded by CI; do not manually upload its contents.
-3. Run Actions → Build Offer Guardian APK → Run workflow. The workflow runs the host tests and builds an Android debug APK using SDK 35, JDK 17, Gradle 8.9. Download the v2.6.0 artifact if successful.
-4. Test while safely parked. Enable accessibility, monitoring, both delivery platforms, and optional notification access/switching. Keep test-only switches on until actual readings and targets are verified. Review delivery-platform agreements before enabling automation.
-5. If a $30/hr-only rule is intended, check that the relevant delivery tier enables hourly at $30 and that any other enabled rules/AND logic are intentional. No configured rule has been overridden by this upgrade.
+1. Export offer history before upgrading. Keep the same debug signing key for in-place installation; if the key changes, uninstalling can delete local data.
+2. Extract the ZIP into a fresh folder. Upload all contents including the hidden `.github/workflows/build-apk.yml`. Keep `tests_bundle.zip` zipped; CI expands it. Avoid multiple project copies.
+3. Run Actions → Build Offer Guardian APK → Run workflow. It tests and builds using SDK 35, JDK 17, Gradle 8.9. Download `OfferGuardian-v2.6.1-installable-APK` if successful.
+4. Test safely parked with automatic decline/test-only toggles checked. Verify the offer rate, target and result before enabling automatic gestures. Notification access remains required for DoorDash notification switching; use the app's shortcut if desired. Review delivery-platform agreements.
 
-## Validation and limitations
-See BUILD_TEST_RESULTS.md and CHANGELOG_v2.6.0.md. The host-side tests do not prove real ML Kit OCR accuracy, Android window ownership, notification switching, drag gestures, or live declines. No Android SDK or Gradle was available locally, so APK compilation and live-device testing remain outstanding. Decline requests and observed dismissal do not independently confirm a platform-recorded decline; uncertain targets remain untouched.
-
-## v2.6.0 changes
-- DoorDash-hosted Uber offer with unexposed target window: two matching fresh frames, verified card and X, confirmed financial failure, stable window and no conflicting target; ownership remains preferred.
-- First use defaults to $30/hr for each tier in both rule stores. Existing saved settings remain unchanged; use Apply $30/hr to all six delivery tiers to reset hourly settings explicitly.
-- Notification listener health, reconnect button, faster repeat X search and DoorDash confirmation check.
+## Validation
+Host tests and Java syntax parsing completed. Full Android SDK/Gradle compilation and phone testing not performed in this environment. Gesture dispatch/dismissal does not confirm the platform's recorded outcome. RAM savings and timing are not measured; a stalled OCR backlog may require restarting monitoring/accessibility if tasks never finish.

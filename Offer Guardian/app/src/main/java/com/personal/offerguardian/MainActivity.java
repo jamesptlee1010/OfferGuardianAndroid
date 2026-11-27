@@ -170,7 +170,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v2.6.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v2.6.1  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
@@ -212,8 +212,14 @@ public final class MainActivity extends Activity {
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
         LinearLayout platforms=card(root,"Platforms · dual monitoring","Leave DoorDash open for the most reliable dual monitoring. Uber overlays are recognised separately from the foreground app. Notification switching is experimental; it avoids known active deliveries and competing offers. No automatic acceptance.");
-        toggle(platforms,"Monitor Uber Eats",prefs.getBoolean(Prefs.UBER_ENABLED,true)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.UBER_ENABLED,on).apply());
-        toggle(platforms,"Monitor DoorDash",prefs.getBoolean(Prefs.DASH_ENABLED,true)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.DASH_ENABLED,on).apply());
+        android.widget.RadioGroup modes=new android.widget.RadioGroup(this);
+        modes.setOrientation(android.widget.RadioGroup.VERTICAL);
+        String[] modeNames={"Monitoring off (both platforms)","Uber Eats only · reduced resources","DoorDash only · reduced resources","Both platforms · dual monitoring"};
+        int currentMode=(prefs.getBoolean(Prefs.UBER_ENABLED,true)?1:0)|(prefs.getBoolean(Prefs.DASH_ENABLED,true)?2:0);
+        int[] modeIds=new int[4];
+        for(int i=0;i<4;i++){android.widget.RadioButton b=new android.widget.RadioButton(this);modeIds[i]=View.generateViewId();b.setId(modeIds[i]);b.setText(modeNames[i]);modes.addView(b);}
+        modes.check(modeIds[currentMode]);platforms.addView(modes);
+        modes.setOnCheckedChangeListener((group,id)->{for(int i=0;i<4;i++)if(modeIds[i]==id){prefs.edit().putBoolean(Prefs.UBER_ENABLED,(i&1)!=0).putBoolean(Prefs.DASH_ENABLED,(i&2)!=0).apply();break;}});
         Switch dashTest=toggle(platforms,"DoorDash TEST ONLY (no decline taps)",prefs.getBoolean(Prefs.DASH_DRY,true));
         dashTest.setOnCheckedChangeListener((b,on)->{
             if(!on&&prefs.getBoolean(Prefs.DASH_DRY,true)) {
@@ -234,14 +240,14 @@ public final class MainActivity extends Activity {
         toggle(quick,"Enable floating quick controls",prefs.getBoolean(Prefs.QUICK_CONTROLS,false)).setOnCheckedChangeListener((b,on)->{prefs.edit().putBoolean(Prefs.QUICK_CONTROLS,on).apply();if(on&&!accessibilityEnabled())openAccessibility();});
         toggle(quick,"Lock quick controls position",prefs.getBoolean(Prefs.QUICK_LOCK,false)).setOnCheckedChangeListener((b,on)->prefs.edit().putBoolean(Prefs.QUICK_LOCK,on).apply());
         button(quick,"Reset quick controls position",false,v->{prefs.edit().remove(Prefs.QUICK_X).remove(Prefs.QUICK_Y).apply();Toast.makeText(this,"Quick controls reset to right edge",Toast.LENGTH_SHORT).show();});
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v2.6.0",
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v2.6.1",
                 "Compact black rate pill, upper-right on either platform (below DoorDash Decline). Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v2.6.0",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v2.6.1",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -375,7 +381,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v2.6.0\n"+
+            String report="Offer Guardian v2.6.1\n"+
                     monitorHealthSummary()+"\n"+
                     "Notification listener: "+OfferNotificationListener.connectionStatus(this)+"\nNotification: "+prefs.getString(Prefs.DASH_NOTICE_DIAG,"No Dasher notification observed")+"\n"+
                     "Last DoorDash rule decision: "+prefs.getString(Prefs.DASH_LAST_RULE_DIAG,"No parsed offer")+"\n"+

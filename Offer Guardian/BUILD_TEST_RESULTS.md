@@ -1,7 +1,8 @@
-# v2.6.0 validation
-- 32/32 host-side workflow test steps passed (Java standalone tests, SQLite/Python checks, source checks).
-- New UberVisualFallback test: 17 assertions passed; tests based on reported unexposed window 1648, X (579,708) and $12.55/28 minutes; rejects duplicate frames, stale frames, changed window/coordinates/financial key, insufficient confidence and wrong host.
-- TieredPrefs: 38 assertions passed, including default hourly-on $30 and saved legacy preferences.
-- Visual detector repeat search matched all four Uber screenshot targets (151–154); no Uber X detected on two DoorDash samples (155–156). Desktop repeat searches 4–12 ms in this sample versus 36–89 ms for full search; not a phone performance measurement.
-- Java source syntax parsed: 43 files. Syntax parsing is not Android Java type checking or APK compilation.
-- Full Android compilation and on-device interactions: not run; Android SDK/Gradle unavailable. Use bundled GitHub workflow. No claim of a live verified decline or launch.
+# v2.6.1 validation
+
+- 32 existing host-side workflow checks passed, including prior parser/rule, SQLite filter simulations, notification policy, visual fallback, and retry checks. Existing retry timing test adjusted for the intentional 1500 ms cooldown.
+- New Stability261Test: 38 assertions passed (user's time OCR variants, near-identical merchant examples, matching financial identity, separated offers, pending DoorDash stage/timer safety and gesture hold durations). Added as the 33rd host workflow check. This tests pure policy, not live UI interactions or Android SQLite merge integration.
+- Java 17 syntax parse: 45 source files passed. This does not perform Android symbol resolution or compile the APK.
+- VersionName 2.6.1, versionCode 32; workflow selects only matching project and checks APK badging.
+- No local Android SDK or Gradle 8.9; APK compilation and runtime device testing not performed. No claim that watchdog stalls or decline effectiveness are fully resolved.
+- Existing history is not modified by installing the source. Export before updating/cleanup.

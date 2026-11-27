@@ -39,6 +39,12 @@ public final class OfferDetailsParser {
         }
     }
 
+    // Correct only an isolated OCR lookalike in an explicit numeric unit slot.
+    static String numericTime(String raw) {
+        return raw.replaceAll("(?i)(?<=hr)([lI|])(?=\\s*min\\b)", " 1")
+                .replaceAll("(?i)(?<![a-z0-9])([lI|])(?=\\s*(?:hours?|hrs?|h|minutes?|mins?|m)(?![a-z]))", "1");
+    }
+
     /** OCR boxes must be normalised to 686x1536, matching the X detector. */
     public static Details parse(int xY,List<OfferScreenEvaluator.Line> all) {
         if(all==null)all=Collections.emptyList();
@@ -81,7 +87,8 @@ public final class OfferDetailsParser {
                 bottom=Math.max(bottom,nearby.bottom);
             }
             String joined=combined.toString().replaceAll("\\s+"," ").trim();
-            Matcher hm=HOURS.matcher(joined),mm=MINS.matcher(joined);
+            String numeric=numericTime(joined);
+            Matcher hm=HOURS.matcher(numeric),mm=MINS.matcher(numeric);
             int hours=0,mins=0;
             boolean h=hm.find(),m=mm.find();
             if(h)try{hours=Integer.parseInt(hm.group(1));}catch(NumberFormatException ignored){}
@@ -116,7 +123,8 @@ public final class OfferDetailsParser {
                 bottom=Math.max(bottom,nearby.bottom);
             }
             String joined=combined.toString().replaceAll("\\s+"," ").trim();
-            Matcher h=HOURS.matcher(joined), m=MINS.matcher(joined);
+            String numeric=numericTime(joined);
+            Matcher h=HOURS.matcher(numeric), m=MINS.matcher(numeric);
             boolean hasH=h.find(),hasM=m.find();
             if(!hasH&&!hasM)continue;
             int hours=0,mins=0;

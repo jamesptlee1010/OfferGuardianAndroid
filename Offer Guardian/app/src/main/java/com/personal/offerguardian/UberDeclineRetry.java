@@ -12,7 +12,8 @@ final class UberDeclineRetry {
     }
     int attempts(){return attempts;}
     boolean canAttempt(){return attempts<3;}
-    boolean ready(long now){return canAttempt()&&(lastAttempt==0||now-lastAttempt>=550);}
+    boolean ready(long now){return canAttempt()&&(lastAttempt==0||now-lastAttempt>=1500);}
+    static int holdMillis(int attempt){return attempt==1?90:attempt==2?140:200;}
     int attempt(long now){lastAttempt=now;return ++attempts;}
     boolean canFallback(){return !fallback;}
     void fallback(){fallback=true;}

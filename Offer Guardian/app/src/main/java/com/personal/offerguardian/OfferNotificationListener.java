@@ -24,6 +24,7 @@ public final class OfferNotificationListener extends NotificationListenerService
         connected=false;latestIntent=null;latestAt=0;Prefs.of(this).edit().remove(Prefs.DASH_NOTICE).apply();
         super.onListenerDisconnected();
     }
+    static void clearPending(){latestIntent=null;latestAt=0;}
     static boolean openLatest(Context context,long now){
         PendingIntent intent=latestIntent;long at=latestAt;latestIntent=null;latestAt=0;
         if(intent==null||!CrossPlatformPolicy.freshNotice(at,now)||!OfferSurfacePolicy.DOORDASH.equals(intent.getCreatorPackage())||(android.os.Build.VERSION.SDK_INT>=31&&!intent.isActivity()))return false;
@@ -32,7 +33,7 @@ public final class OfferNotificationListener extends NotificationListenerService
     private String previousKey="";
     private long previousPostTime=0,previousElapsed=0;
     @Override public void onNotificationPosted(StatusBarNotification s) {
-        if(s==null||!OfferSurfacePolicy.DOORDASH.equals(s.getPackageName()))return;
+        if(s==null||!OfferSurfacePolicy.DOORDASH.equals(s.getPackageName())||!Prefs.of(this).getBoolean(Prefs.DASH_ENABLED,true))return;
         Notification n=s.getNotification();if(n==null||n.extras==null){Prefs.of(this).edit().putString(Prefs.DASH_NOTICE_DIAG,"Dasher notification received; no extras available").apply();return;}
         Bundle e=n.extras;
         android.content.SharedPreferences p=Prefs.of(this);

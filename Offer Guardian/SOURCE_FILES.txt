@@ -1,5 +1,8 @@
 app/src/main/AndroidManifest.xml
+app/src/main/aidl/com/personal/offerguardian/ILiveDeclineInput.aidl
 app/src/main/aidl/com/personal/offerguardian/IOwnTouchProbe.aidl
+app/src/main/java/com/personal/offerguardian/LiveDeclineInput.java
+app/src/main/java/com/personal/offerguardian/LiveDeclinePolicy.java
 app/src/main/java/com/personal/offerguardian/MainActivity.java
 app/src/main/java/com/personal/offerguardian/OfferAcceptanceEvidence.java
 app/src/main/java/com/personal/offerguardian/OfferAccessibilityService.java
@@ -36,6 +39,7 @@ app/src/main/java/com/personal/offerguardian/OwnTouchProbe.java
 app/src/main/java/com/personal/offerguardian/OwnTouchProbePolicy.java
 app/src/main/java/com/personal/offerguardian/Prefs.java
 app/src/main/java/com/personal/offerguardian/ShizukuDiagnosticsActivity.java
+app/src/main/java/com/personal/offerguardian/ShizukuLiveClient.java
 app/src/main/java/com/personal/offerguardian/TieredOfferRules.java
 app/src/main/java/com/personal/offerguardian/TouchDiagnosticsActivity.java
 app/src/main/java/com/personal/offerguardian/TouchMethod.java

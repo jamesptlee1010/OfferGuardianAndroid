@@ -35,8 +35,8 @@ public final class ShizukuDiagnosticsActivity extends Activity {
     private Button button(LinearLayout root,String text,View.OnClickListener l){Button b=new Button(this);b.setAllCaps(false);b.setText(text);b.setOnClickListener(l);root.addView(b,new LinearLayout.LayoutParams(-1,-2));return b;}
     @Override protected void onCreate(Bundle state){super.onCreate(state);
         ScrollView scroll=new ScrollView(this);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(16),dp(18),dp(24));root.setBackgroundColor(Color.WHITE);scroll.addView(root);setContentView(scroll);
-        label(root,"Shizuku diagnostics · v3.2.0",23);
-        label(root,"Connection and own-screen input test only. No Shizuku input is sent to Uber. Test parked; do not touch the screen during the test.",14);
+        label(root,"Shizuku diagnostics · v3.3.0",23);
+        label(root,"This screen tests only our own button. For live offers, select Shizuku in Touch Diagnostics after a successful test. Test parked; do not touch the screen during the test.",14);
         status=label(root,"Checking…",15);
         target=button(root,"X — TEST TARGET",v->{click++;updateCounts();line("TARGET CLICK received");});target.setTextColor(Color.WHITE);target.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(10,132,66)));target.setMinHeight(dp(64));
         target.setOnTouchListener((v,e)->{switch(e.getActionMasked()){case MotionEvent.ACTION_DOWN:down++;line("TARGET DOWN "+e.getRawX()+","+e.getRawY());break;case MotionEvent.ACTION_UP:up++;line("TARGET UP");break;case MotionEvent.ACTION_CANCEL:cancel++;line("TARGET CANCEL");break;}updateCounts();return false;});
@@ -47,7 +47,7 @@ public final class ShizukuDiagnosticsActivity extends Activity {
         button(root,"Refresh connection",v->refresh());
         button(root,"Copy diagnostic report",v->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(cb!=null){cb.setPrimaryClip(ClipData.newPlainText("Shizuku diagnostics",status.getText()+"\n"+log));Toast.makeText(this,"Copied",Toast.LENGTH_SHORT).show();}});
         report=label(root,"",12);report.setTextIsSelectable(true);
-        args=new Shizuku.UserServiceArgs(new ComponentName(this,OwnTouchProbe.class)).daemon(false).processNameSuffix("touch_probe").version(35);
+        args=new Shizuku.UserServiceArgs(new ComponentName(this,OwnTouchProbe.class)).daemon(false).processNameSuffix("touch_probe").version(36);
         Shizuku.addBinderReceivedListenerSticky(received);Shizuku.addBinderDeadListener(dead);Shizuku.addRequestPermissionResultListener(permission);
         line(Build.MANUFACTURER+" "+Build.MODEL+" | Android "+Build.VERSION.RELEASE+" | "+Build.DISPLAY);
     }

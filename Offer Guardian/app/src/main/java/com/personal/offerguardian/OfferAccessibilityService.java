@@ -66,6 +66,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 final long now = SystemClock.elapsedRealtime();
                 recoverStalledCapture(now);
                 SharedPreferences prefs=Prefs.of(OfferAccessibilityService.this);
+                boolean useShizuku=TouchMethod.normalize(prefs.getInt(TouchMethod.KEY,0))==TouchMethod.SHIZUKU&&prefs.getBoolean(Prefs.MONITOR,false)&&prefs.getBoolean(Prefs.AUTO_DECLINE,false)&&!prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true);
+                if(useShizuku){if(shizukuLive==null)shizukuLive=new ShizukuLiveClient(OfferAccessibilityService.this,handler,OfferAccessibilityService.this::status);shizukuLive.prepare();}
+                else if(shizukuLive!=null)shizukuLive.release();
                 if (prefs.getBoolean(Prefs.MONITOR,false) &&
                         !prefs.getBoolean(Prefs.LEARNING,false)) {
                     if (!prefs.getBoolean(Prefs.VISUAL_X,false)) {
@@ -95,6 +98,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private TextRecognizer recognizer;
     private final java.util.concurrent.ExecutorService visualWorker=java.util.concurrent.Executors.newSingleThreadExecutor();
     private boolean visualBusy=false,gestureBusy=false;
+    private ShizukuLiveClient shizukuLive;
     private int ocrInFlight=0;
     private int[] reusablePixels;
     private int recentCardTop=-1;
@@ -297,7 +301,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 .putLong(Prefs.HEALTH_HEARTBEAT_TIME,System.currentTimeMillis())
                 .putString(Prefs.HEALTH_STATE,"Accessibility connected")
                 .putInt(Prefs.HEALTH_RECOVERIES,0).apply();
-        status("Accessibility connected. v3.2.0 Touch Diagnostics | Uber Driver-only monitoring + scanner watchdog active.");
+        status("Accessibility connected. v3.3.0 Touch Diagnostics | Uber Driver-only monitoring + scanner watchdog active.");
         handler.removeCallbacks(monitorLoop);
         handler.post(monitorLoop);
     }
@@ -1011,6 +1015,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
         hideOverlay();
         if(!targetIsUber((int)x,(int)y)){status("Target no longer in Uber window; no tap.");return;}
         int mode=TouchMethod.normalize(prefs.getInt(TouchMethod.KEY,0));
+        if(mode==TouchMethod.SHIZUKU){
+            performShizukuDecline(payout,x,y,width,height,now,timing);return;
+        }
         AccessibilityNodeInfo direct=TouchMethod.tryNative(mode)?findDecline(getRootInActiveWindow(),(int)x,(int)y,0):null;
         if(!targetIsUber((int)x,(int)y)){status("Uber target changed during accessibility lookup; no tap.");return;}
         if(!TouchMethod.allowGesture(mode)&&direct==null){status("Native-only: no verified accessible X node; no tap.");return;}
@@ -1058,6 +1065,32 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 payout,host,visual.theme,finalTiming+" | hold="+duration+"ms | attempt "+attempt+"/3 | physical target="+x+","+y+" screen="+width+"x"+height));
     }
 
+
+    private void performShizukuDecline(double payout,float x,float y,int width,int height,long now,String timing){
+        if(shizukuLive==null||!shizukuLive.ready()){status("Shizuku not ready; decline skipped, no fallback");return;}
+        if(!targetIsUber((int)x,(int)y)||SystemClock.elapsedRealtime()-lastCaptureAt>=1900){status("Shizuku target stale or not verified; no tap");return;}
+        final long historyId=lastHistoryId;
+        final long deadline=lastCaptureAt+1900;
+        final long generation=++gestureGeneration;
+        final int attempt=retries.attempt(now);
+        gestureBusy=true;
+        boolean sent=shizukuLive.send(Math.round(x),Math.round(y),width,height,deadline,result->{
+            if(generation!=gestureGeneration)return;
+            gestureBusy=false;autoDeclineSent=!retries.canAttempt();
+            if(result.startsWith("DISPATCHED")){
+                try(OfferHistoryStore store=new OfferHistoryStore(this)){store.markDeclineAttempt(historyId);}catch(Exception ignored){}
+                autoDeclineSent=true;
+            }else if(result.startsWith("UNKNOWN")){
+                // Ambiguous input result: never issue another tap for this verified offer.
+                while(retries.canAttempt())retries.attempt(SystemClock.elapsedRealtime());
+                autoDeclineSent=true;
+            }
+            status(String.format(Locale.US,"A$%.2f: Shizuku %s | attempt %d/3 | %s",payout,result,attempt,timing));
+        });
+        if(!sent){gestureBusy=false;status("Shizuku input not submitted; no fallback");return;}
+        status(String.format(Locale.US,"A$%.2f: Shizuku decline requested; physical target %.1f,%.1f | attempt %d/3",payout,x,y,attempt));
+        handler.postDelayed(()->{if(gestureBusy&&generation==gestureGeneration){gestureBusy=false;gestureGeneration++;while(retries.canAttempt())retries.attempt(SystemClock.elapsedRealtime());autoDeclineSent=true;status("Shizuku result timed out; no more taps for this offer");}},4500);
+    }
 
     /** Explicit user-initiated test restricted to our own visible diagnostic button. */
     interface TouchResult { void report(String message); }
@@ -1147,11 +1180,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
     @Override public void onInterrupt() {
         Prefs.of(this).edit().putString(Prefs.HEALTH_STATE,"Accessibility interrupted").apply();
         watchdog.invalidate();
+        if(shizukuLive!=null)shizukuLive.release();
         hideOverlay();clearPendingAcceptance();clearReadVerification();
         status("Accessibility interrupted. Monitoring paused; service reconnect may be required.");
     }
     @Override public boolean onUnbind(android.content.Intent intent) {
         if(connected==this)connected=null;
+        if(shizukuLive!=null){shizukuLive.close();shizukuLive=null;}
         Prefs.of(this).edit().putBoolean(Prefs.HEALTH_SERVICE_ACTIVE,false)
                 .putString(Prefs.HEALTH_STATE,"Accessibility unbound").apply();
         watchdog.invalidate();
@@ -1163,6 +1198,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
     @Override public void onDestroy() {
         if(connected==this)connected=null;
+        if(shizukuLive!=null){shizukuLive.close();shizukuLive=null;}
         Prefs.of(this).edit().putBoolean(Prefs.HEALTH_SERVICE_ACTIVE,false)
                 .putString(Prefs.HEALTH_STATE,"Accessibility service stopped").apply();
         watchdog.invalidate();

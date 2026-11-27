@@ -34,7 +34,7 @@ public final class TouchDiagnosticsActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);SharedPreferences prefs=Prefs.of(this);
         ScrollView scroll=new ScrollView(this);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(20),dp(18),dp(24));root.setBackgroundColor(Color.WHITE);scroll.addView(root);setContentView(scroll);
-        root.addView(text("Touch Diagnostics · v3.2.0",24));
+        root.addView(text("Touch Diagnostics · v3.3.0",24));
         root.addView(text("Test while parked. Tap the green target manually first. Then run a simulated tap and do not touch the screen until the result appears. No Uber offer is touched by these test buttons.",14));
         target=button(root,"X — TAP TEST TARGET",v->{clicks++;counts();line("TARGET CLICK received");});
         target.setContentDescription("Touch test target");target.setTextColor(Color.WHITE);target.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(10,132,66)));target.setMinHeight(dp(65));
@@ -50,14 +50,14 @@ public final class TouchDiagnosticsActivity extends Activity {
         button(root,"Test 300 ms gesture",v->runTest(300,false));
         button(root,"Open accessibility settings",v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         root.addView(text("Live Uber decline method",19));
-        root.addView(text("Only applies to offers that already fail your rules and pass existing fresh-X and window verification. The app removes its own overlay before any decline. Native-only never falls back to gestures.",14));
+        root.addView(text("Only applies to offers that already fail your rules and pass existing fresh-X and window verification. The app removes its own overlay before any decline. Native-only and Shizuku never fall back to other input. First authorise Shizuku in its diagnostic screen; then select Shizuku here. If unavailable, no live decline is attempted.",14));
         Spinner spinner=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,TouchMethod.LABELS);adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);spinner.setAdapter(adapter);spinner.setSelection(TouchMethod.normalize(prefs.getInt(TouchMethod.KEY,0)));root.addView(spinner);
         spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int i,long id){prefs.edit().putInt(TouchMethod.KEY,TouchMethod.normalize(i)).apply();}public void onNothingSelected(AdapterView<?> p){}});
         button(root,"Copy touch report",v->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(cb!=null){cb.setPrimaryClip(ClipData.newPlainText("Touch diagnostics",header()+"\n"+log));Toast.makeText(this,"Report copied",Toast.LENGTH_SHORT).show();}});
         button(root,"Clear report",v->{if(!running){log.setLength(0);downs=ups=clicks=cancels=0;counts();line("Report cleared");}});
         report=text("",12);report.setTextIsSelectable(true);root.addView(report);line(header());
     }
-    private String header(){return "Offer Guardian 3.2.0 | "+Build.MANUFACTURER+" "+Build.MODEL+" | Android "+Build.VERSION.RELEASE+" | build "+Build.DISPLAY+" | "+getResources().getDisplayMetrics().widthPixels+"x"+getResources().getDisplayMetrics().heightPixels;}
+    private String header(){return "Offer Guardian 3.3.0 | "+Build.MANUFACTURER+" "+Build.MODEL+" | Android "+Build.VERSION.RELEASE+" | build "+Build.DISPLAY+" | "+getResources().getDisplayMetrics().widthPixels+"x"+getResources().getDisplayMetrics().heightPixels;}
     private void runTest(int duration,boolean nativeClick){
         if(running||!active||!hasWindowFocus())return;
         OfferAccessibilityService service=OfferAccessibilityService.connectedService();if(service==null){line("Accessibility not connected; enable Offer Guardian first.");return;}

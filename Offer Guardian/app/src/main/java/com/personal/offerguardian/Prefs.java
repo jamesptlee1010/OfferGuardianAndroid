@@ -56,11 +56,6 @@ final class Prefs {
     static final String LIVE_STATUS = "live_status";
     static final String LIVE_TIME = "live_time";
     static final String DIAG_HISTORY = "diagnostic_history";
-    static final String HEALTH_HEARTBEAT_TIME = "health_heartbeat_time";
-    static final String HEALTH_SERVICE_ACTIVE = "health_service_active";
-    static final String HEALTH_RECOVERIES = "health_recoveries";
-    static final String HEALTH_SCREENSHOTS = "health_screenshots";
-    static final String HEALTH_STATE = "health_monitor_state";
     static final String MIGRATED_V03 = "migrated_v03";
     static final String MIGRATED_V04 = "migrated_v04";
     static final String LAST_STATUS = "last_status";
@@ -73,7 +68,7 @@ final class Prefs {
     static float threshold(SharedPreferences p) {
         return p.getFloat(THRESHOLD, 30.0f);
     }
-    static boolean tieredEnabled(SharedPreferences p) {return p.getBoolean(TIERED_ACTIVE,!p.contains(RULE_PRICE)&&!p.contains(RULE_HOURLY)&&!p.contains(THRESHOLD));}
+    static boolean tieredEnabled(SharedPreferences p) {return p.getBoolean(TIERED_ACTIVE,false);}
     static String tierKey(int count,String field) {
         if(count<1||count>3)throw new IllegalArgumentException("Tier must be 1, 2 or 3");
         return TIER_KEY+count+"_"+field;
@@ -98,11 +93,6 @@ final class Prefs {
         }
         return new TieredOfferRules(cs,enabled);
     }
-    static void resetHourlyDefaults(SharedPreferences p){
-        SharedPreferences.Editor e=p.edit().putBoolean(TIERED_ACTIVE,true).putBoolean(RULE_HOURLY,true).putFloat(RULE_MIN_HOUR,30f).putBoolean(RULE_PRICE,false);
-        for(int n=1;n<=3;n++)e.putBoolean(tierKey(n,"enabled"),true).putBoolean(tierKey(n,"hourly_on"),true).putFloat(tierKey(n,"min_hourly"),30f).putBoolean(tierKey(n,"price_on"),false).putString(tierKey(n,"mode"),"ANY");
-        e.putLong(TIERED_GENERATION,p.getLong(TIERED_GENERATION,0)+1).apply();
-    }
     static String ruleSummary(SharedPreferences p) {
         return tieredEnabled(p)?tieredRules(p).summary():OfferRuleEngine.summary(rules(p));
     }
@@ -110,8 +100,8 @@ final class Prefs {
         String selection=p.getString(RULE_MODE,"ANY");
         OfferRuleEngine.Mode mode="ALL".equals(selection)?OfferRuleEngine.Mode.ALL:OfferRuleEngine.Mode.ANY;
         return new OfferRuleEngine.Config(
-            p.getBoolean(RULE_PRICE,false),threshold(p),
-            p.getBoolean(RULE_HOURLY,true),p.getFloat(RULE_MIN_HOUR,30.0f),
+            p.getBoolean(RULE_PRICE,true),threshold(p),
+            p.getBoolean(RULE_HOURLY,false),p.getFloat(RULE_MIN_HOUR,40.0f),
             false,0.0,mode,
             p.getBoolean(RULE_DELIVERIES,false),p.getInt(RULE_MIN_DELIVERIES,2));
     }

@@ -46,7 +46,7 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(10, 132, 66);
     private static final int BG = Color.rgb(246, 249, 247);
     private SharedPreferences prefs;
-    private TextView accessStatus, lastStatus, historyStatus, monitorHealthStatus;
+    private TextView accessStatus, lastStatus, historyStatus;
     private Switch monitorSwitch, autoSwitch, alertSwitch, visualSwitch, visualTestSwitch;
     private TextView rulesSummary;
     private TextView alertVolumeLabel;
@@ -170,7 +170,7 @@ public final class MainActivity extends Activity {
 
         TextView title = text("OFFER GUARDIAN", 25, INK, true);
         root.addView(title, lp(-2, 3));
-        root.addView(text("v3.0.0  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
+        root.addView(text("v0.9.14  ·  Rules + Offer History  ·  Australia", 13, MUTED, false), lp(-2, 12));
         LinearLayout historyLaunch=card(root,"Offer History · Concept B",
                 "Browse all, accepted and highest offers with pickup, destination, estimated A$/km and A$/hour.");
         button(historyLaunch,"Open Offer History  →",true,
@@ -185,7 +185,6 @@ public final class MainActivity extends Activity {
         settings.addView(rulesSummary,lp(-2,12));
         button(settings,"Open Rules Builder  →",true,
                 v -> startActivity(new Intent(this,OfferRulesActivity.class)));
-        button(settings,"Apply $30/hr to all three delivery tiers",false,v -> new AlertDialog.Builder(this).setTitle("Reset hourly rules?").setMessage("Enable $30/hr for all three delivery counts and turn off price rules. History is unchanged.").setNegativeButton("Cancel",null).setPositiveButton("Apply",(d,w)->{Prefs.resetHourlyDefaults(prefs);refresh();}).show());
         monitorSwitch = toggle(settings, "Monitor offers in Uber Driver", prefs.getBoolean(Prefs.MONITOR, false));
         autoSwitch = toggle(settings, "Auto-decline offers failing your selected rules", prefs.getBoolean(Prefs.AUTO_DECLINE, false));
         alertSwitch = toggle(settings, "Sound alert for qualifying or uncertain offers", prefs.getBoolean(Prefs.ALERT, true));
@@ -212,14 +211,14 @@ public final class MainActivity extends Activity {
         });
         alertSwitch.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean(Prefs.ALERT, checked).apply());
         button(settings, "Preview example rules", false, v -> testExamples());
-        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v3.0.0",
+        LinearLayout overlaySettings=card(root,"Live qualifying-offer overlay · v0.9.14",
                 "Approved compact black pill, upper-right of Uber Driver. Shows only estimated A$/hr and A$/km, with NO lightning icon or vertical line. It appears only if an offer meets your enabled ANY/ALL rules; never on failed or uncertain offers.");
         Switch overlaySwitch=toggle(overlaySettings,"Show small overlay for qualifying offers",
                 prefs.getBoolean(Prefs.OVERLAY_ENABLED,true));
         overlaySwitch.setOnCheckedChangeListener((b,enabled)->
                 prefs.edit().putBoolean(Prefs.OVERLAY_ENABLED,enabled).apply());
         overlaySettings.addView(text("No extra 'Draw over other apps' permission is required: the enabled accessibility service owns the non-interactive display. It disappears when the offer disappears, monitoring stops, or you leave Uber Driver.",12,MUTED,false),lp(-2,9));
-        LinearLayout acceptance=card(root,"Accepted offer tracking · v3.0.0",
+        LinearLayout acceptance=card(root,"Accepted offer tracking · v0.9.14",
                 "After a card disappears, check for an active Uber pickup screen naming the same merchant twice. Never assume an Accept or Match tap succeeded simply because the offer disappeared.");
         Switch acceptanceSwitch=toggle(acceptance,"Auto-mark verified assigned jobs as Accepted",
                 prefs.getBoolean(Prefs.ACCEPT_TRACKING,true));
@@ -344,8 +343,6 @@ public final class MainActivity extends Activity {
                 13,MUTED,false),lp(-2,0));
 
         LinearLayout recent = card(root, "Live diagnostics", "Shows why offers qualify, whether the overlay appears, and whether a pickup assignment was verified. No screenshots are stored.");
-        monitorHealthStatus=text("Monitor health: no heartbeat yet.",13,MUTED,false);
-        recent.addView(monitorHealthStatus,lp(-2,12));
         lastStatus = text("No offer detected yet.", 14, INK, false);
         recent.addView(lastStatus, lp(-2, 12));
         recent.addView(text("Recent detection steps",14,MUTED,true),lp(-2,6));
@@ -353,8 +350,7 @@ public final class MainActivity extends Activity {
         recent.addView(historyStatus,lp(-2,8));
         button(recent, "Refresh diagnostics", false, v -> refresh());
         button(recent, "Copy diagnostics for troubleshooting", false, v -> {
-            String report="Offer Guardian v3.0.0\n"+
-                    monitorHealthSummary()+"\nLast Uber rule decision: "+prefs.getString("uber_last_rule_v30","No parsed offer")+"\n"+
+            String report="Offer Guardian v0.9.14\n"+
                     prefs.getString(Prefs.DIAG_HISTORY,"No diagnostics yet.");
             ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
             if(manager!=null) {
@@ -414,31 +410,8 @@ public final class MainActivity extends Activity {
         } else startActivity(intent);
     }
 
-    private String monitorHealthSummary() {
-        long last=prefs.getLong(Prefs.HEALTH_HEARTBEAT_TIME,0L);
-        String state=prefs.getString(Prefs.HEALTH_STATE,"no service heartbeat yet");
-        int recoveries=prefs.getInt(Prefs.HEALTH_RECOVERIES,0);
-        int screenshots=prefs.getInt(Prefs.HEALTH_SCREENSHOTS,0);
-        if(last<=0) return "Service heartbeat: none recorded since installing this version";
-        long seconds=Math.max(0,(System.currentTimeMillis()-last)/1000L);
-        boolean service=prefs.getBoolean(Prefs.HEALTH_SERVICE_ACTIVE,false);
-        String health= !service ? "SERVICE STOPPED / UNBOUND" :
-                seconds>100 ? "HEARTBEAT STALE: Android may have suspended service" :
-                "Heartbeat OK";
-        return health+" ("+seconds+"s ago) | "+state+
-                " | screenshots="+screenshots+" | recoveries="+recoveries;
-    }
-
     private void refresh() {
         if (rulesSummary!=null)rulesSummary.setText(Prefs.ruleSummary(prefs));
-        if(monitorHealthStatus!=null) {
-            monitorHealthStatus.setText(monitorHealthSummary());
-            long hb=prefs.getLong(Prefs.HEALTH_HEARTBEAT_TIME,0L);
-            boolean stale=hb>0 && System.currentTimeMillis()-hb>100000L;
-            monitorHealthStatus.setTextColor(stale ||
-                    !prefs.getBoolean(Prefs.HEALTH_SERVICE_ACTIVE,true)?
-                    Color.rgb(181,92,32):ACCENT);
-        }
         if (accessStatus == null) return;
         boolean access = accessibilityEnabled();
         accessStatus.setText(access ? "✓ Accessibility service ENABLED" : "! Accessibility service NOT ENABLED");

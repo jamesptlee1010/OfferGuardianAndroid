@@ -103,21 +103,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         values.put("verified_frames",2);
         values.put("parsed_hours",details.parsedHours);
         values.put("parsed_minutes",details.parsedMinutes);
-        SQLiteDatabase db=getWritableDatabase();
-        db.beginTransaction();
-        try {
-            long now=values.getAsLong("seen_at");
-            // Only reuse an unconfirmed recent complete row. No guessing missing metrics.
-            try(Cursor cur=db.rawQuery("SELECT "+HISTORY_COLUMNS+" FROM offers WHERE seen_at>=? AND seen_at<=? AND payout_cents=? AND minutes=? AND metres=? AND delivery_count=? AND type=? AND outcome='UNKNOWN' ORDER BY seen_at DESC",new String[]{Long.toString(now-OfferHistoryDedup.WINDOW_MS),Long.toString(now),Integer.toString(payoutCents),Integer.toString(details.minutes),Integer.toString(independentlyVerifiedMetres),Integer.toString(details.deliveryCount),details.type})){
-                while(cur.moveToNext()){
-                    Item prior=parse(cur);
-                    if(prior.trustworthyRates()&&OfferHistoryDedup.same(now-prior.seenAt,prior.type,details.type,prior.cents,payoutCents,prior.minutes,details.minutes,prior.metres,independentlyVerifiedMetres,prior.deliveryCount,details.deliveryCount,prior.pickup,details.pickup,prior.destination,details.destination)){
-                        db.setTransactionSuccessful();return prior.id;
-                    }
-                }
-            }
-            long id=db.insertOrThrow(TABLE,null,values);db.setTransactionSuccessful();return id;
-        } finally {db.endTransaction();}
+        return getWritableDatabase().insertOrThrow(TABLE,null,values);
     }
 
     /**
@@ -244,64 +230,6 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         return id>0 && getWritableDatabase().delete(TABLE,"id=?",new String[]{Long.toString(id)})==1;
     }
     public synchronized void clearAll() {getWritableDatabase().delete(TABLE,null,null);}
-    private static final String HISTORY_COLUMNS="id,seen_at,payout_cents,type,pickup,destination,minutes,metres,outcome,action,raw_payout,raw_duration,raw_distance,extraction_status,extraction_note,verified_frames,parsed_hours,parsed_minutes,delivery_count";
-    public static final class DuplicateGroup {
-        public final List<Item> rows=new ArrayList<>();
-        public Item keeper(){
-            Item best=rows.get(0);
-            for(Item i:rows)if(score(i)>score(best))best=i;
-            return best;
-        }
-        private int score(Item i){return (!UNKNOWN.equals(i.outcome)?100000:0)+actionRank(i.action)*1000+(i.trustworthyRates()?100:0)+Math.min(10,i.verifiedFrames)*10;}
-    }
-    private static int actionRank(String a){return "ASSIGNMENT_CONFIRMED".equals(a)?3:"DASH_DISMISSED_UNCONFIRMED".equals(a)?2:"DECLINE_REQUESTED".equals(a)?1:0;}
-    private static boolean duplicatePair(Item a,Item b){
-        return a.trustworthyRates()&&b.trustworthyRates()&&OfferHistoryDedup.same(Math.abs(a.seenAt-b.seenAt),a.type,b.type,a.cents,b.cents,a.minutes,b.minutes,a.metres,b.metres,a.deliveryCount,b.deliveryCount,a.pickup,b.pickup,a.destination,b.destination);
-    }
-    public synchronized List<DuplicateGroup> findDuplicates(){
-        List<DuplicateGroup> groups=new ArrayList<>();
-        List<DuplicateGroup> active=new ArrayList<>();
-        try(Cursor cur=getReadableDatabase().rawQuery("SELECT "+HISTORY_COLUMNS+" FROM offers WHERE minutes>0 AND metres>0 AND delivery_count>0 ORDER BY seen_at,id",null)){
-            while(cur.moveToNext()){
-                Item next=parse(cur);if(!next.trustworthyRates())continue;
-                active.removeIf(g->next.seenAt-g.rows.get(0).seenAt>OfferHistoryDedup.WINDOW_MS);
-                DuplicateGroup match=null;
-                for(DuplicateGroup g:active){
-                    boolean compatible=true;int confirmed=UNKNOWN.equals(next.outcome)?0:1;
-                    for(Item old:g.rows){if(!duplicatePair(old,next)){compatible=false;break;}if(!UNKNOWN.equals(old.outcome))confirmed++;}
-                    if(compatible&&confirmed<=1){if(match!=null){match=null;break;}match=g;}
-                }
-                if(match==null){match=new DuplicateGroup();active.add(match);}
-                match.rows.add(next);if(match.rows.size()==2)groups.add(match);
-            }
-        }
-        return groups;
-    }
-    /** Recheck every previewed row inside one transaction; skip any changed group. */
-    public synchronized int mergeDuplicates(List<DuplicateGroup> preview){
-        SQLiteDatabase db=getWritableDatabase();int removed=0;db.beginTransaction();
-        try{
-            for(DuplicateGroup proposed:preview){
-                DuplicateGroup fresh=new DuplicateGroup();boolean unchanged=true;int confirmed=0;
-                for(Item old:proposed.rows){
-                    try(Cursor cur=db.rawQuery("SELECT "+HISTORY_COLUMNS+" FROM offers WHERE id=?",new String[]{Long.toString(old.id)})){
-                        if(!cur.moveToFirst()){unchanged=false;break;}
-                        Item i=parse(cur);if(!old.outcome.equals(i.outcome)||!old.action.equals(i.action)||old.seenAt!=i.seenAt||!duplicatePair(old,i)){unchanged=false;break;}
-                        if(!UNKNOWN.equals(i.outcome))confirmed++;
-                        for(Item prior:fresh.rows)if(!duplicatePair(prior,i))unchanged=false;
-                        fresh.rows.add(i);
-                    }
-                }
-                if(!unchanged||confirmed>1||fresh.rows.size()<2)continue;
-                Item keep=fresh.keeper();long earliest=keep.seenAt;String action=keep.action;
-                for(Item i:fresh.rows){earliest=Math.min(earliest,i.seenAt);if(UNKNOWN.equals(keep.outcome)&&actionRank(i.action)>actionRank(action))action=i.action;}
-                ContentValues values=new ContentValues();values.put("seen_at",earliest);values.put("action",action);
-                db.update(TABLE,values,"id=?",new String[]{Long.toString(keep.id)});
-                for(Item i:fresh.rows)if(i.id!=keep.id)removed+=db.delete(TABLE,"id=?",new String[]{Long.toString(i.id)});
-            }
-            db.setTransactionSuccessful();return removed;
-        }finally{db.endTransaction();}
-    }
     public static final class ImportSummary {
         public int imported, duplicates, invalid, processed;
     }

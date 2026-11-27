@@ -15,7 +15,6 @@ import android.os.SystemClock;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.view.accessibility.AccessibilityWindowInfo;
 
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.TextRecognition;
@@ -40,29 +39,16 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private static final String UBER = OfferSurfacePolicy.UBER;
     // One Uber-only idle polling interval; fast retries run only during
     // active offer verification, never while another app is foreground.
-    private static final long UBER_POLL_MS=900;
-    private static final long UBER_MIN_CAPTURE_MS=650;
+    private static final long UBER_POLL_MS=1700;
+    private static final long UBER_MIN_CAPTURE_MS=1450;
     // Android limits repeated Accessibility screenshots (~333 ms in AOSP).
     // Give it a margin for bounded, offer-specific confirmation retries.
     private static final long FAST_CONFIRM_MIN_CAPTURE_MS=430;
     private static final long REPEAT_GUARD_MS = 90000;
-    // Long enough for normal ML Kit and screenshot work, short enough to recover
-    // when Android silently drops a screenshot/OCR completion callback.
-    private static final long CAPTURE_TIMEOUT_MS = 8000;
-    private static final long HEARTBEAT_MS = 45000;
-    private final OfferScanWatchdog watchdog = new OfferScanWatchdog();
-    private long lastHeartbeatAt = 0;
-    private int consecutiveCaptureErrors = 0;
-    private long nextCaptureAfter = 0;
-    private int screenshotCount = 0;
-    private String lastForegroundReport = "";
-    private long lastForegroundReportAt = 0;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable monitorLoop = new Runnable() {
         @Override public void run() {
             try {
-                final long now = SystemClock.elapsedRealtime();
-                recoverStalledCapture(now);
                 SharedPreferences prefs=Prefs.of(OfferAccessibilityService.this);
                 if (prefs.getBoolean(Prefs.MONITOR,false) &&
                         !prefs.getBoolean(Prefs.LEARNING,false)) {
@@ -70,17 +56,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
                         hideOverlay();clearPendingAcceptance();clearReadVerification();
                         status("Visual recognition is OFF. Turn on grey-X recognition in the app.");
                     } else if (isSupportedForeground()) {
-                        reportHeartbeat(now, "Uber foreground; monitoring active");
                         scanIfDue();
                     } else {
                         hideOverlay();clearPendingAcceptance();clearReadVerification();
-                        reportForegroundUnavailable(now);
-                        reportHeartbeat(now, "Uber not confirmed; waiting for supported foreground");
                     }
                 } else {
                     hideOverlay();clearPendingAcceptance();clearReadVerification();
-                    reportHeartbeat(now, !prefs.getBoolean(Prefs.MONITOR,false) ?
-                            "Monitoring switched OFF" : "Learning mode enabled; no scan");
                 }
             } catch (Exception e) {
                 status("Monitor error: " + e.getClass().getSimpleName());
@@ -91,27 +72,6 @@ public final class OfferAccessibilityService extends AccessibilityService {
     };
 
     private TextRecognizer recognizer;
-    private final java.util.concurrent.ExecutorService visualWorker=java.util.concurrent.Executors.newSingleThreadExecutor();
-    private boolean visualBusy=false,gestureBusy=false;
-    private int ocrInFlight=0;
-    private int[] reusablePixels;
-    private int recentCardTop=-1;
-    private final UberDeclineRetry retries=new UberDeclineRetry();
-    private String lastAlertKey="";
-    private long lastAlertAt=0;
-    private int payoutFailures=0;
-    private long gestureGeneration=0;
-    private boolean alertOnce(double payout,OfferDetailsParser.Details d){
-        String key=Math.round(payout*100)+"/"+d.minutes+"/"+d.metres+"/"+d.deliveryCount+"/"+d.type;
-        long now=SystemClock.elapsedRealtime();
-        if(key.equals(lastAlertKey)&&now-lastAlertAt<60000)return false;
-        lastAlertKey=key;lastAlertAt=now;return OfferAlert.signal(this,payout);
-    }
-    private com.google.android.gms.tasks.Task<Text> submitOcr(Bitmap bitmap){
-        ocrInFlight++;
-        try{return recognizer.process(InputImage.fromBitmap(bitmap,0));}
-        catch(RuntimeException e){ocrInFlight--;throw e;}
-    }
     private int[] template;
     private int[] darkTemplate;
     private final OfferReadVerifier readVerifier=new OfferReadVerifier();
@@ -137,7 +97,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 Math.max(15,FAST_CONFIRM_MIN_CAPTURE_MS-sinceCapture+15));
     }
     private long lastCaptureAt=0;
-    // The watchdog owns the in-flight token; there is no unbounded capturing flag.
+    private boolean capturing=false;
     private double lastAmount=Double.NaN;
     private long lastDecisionAt=0;
     private int lastX=-1,lastY=-1;
@@ -170,7 +130,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         acceptanceEvidence.reset();
     }
     private void armPendingAcceptance() {
-        if(lastHistoryId<=0 || autoDeclineSent || retries.attempts()>0 || !isUberForeground() ||
+        if(lastHistoryId<=0 || autoDeclineSent || !isUberForeground() ||
                 !Prefs.of(this).getBoolean(Prefs.ACCEPT_TRACKING,true))return;
         try(OfferHistoryStore store=new OfferHistoryStore(this)) {
             OfferHistoryStore.Item item=store.byId(lastHistoryId);
@@ -185,92 +145,16 @@ public final class OfferAccessibilityService extends AccessibilityService {
         } catch(Exception e) {status("Could not start acceptance check: "+e.getClass().getSimpleName());}
     }
 
-    private void reportHeartbeat(long now, String detail) {
-        if(now - lastHeartbeatAt < HEARTBEAT_MS) return;
-        lastHeartbeatAt = now;
-        Prefs.of(this).edit()
-                .putLong(Prefs.HEALTH_HEARTBEAT_TIME,System.currentTimeMillis())
-                .putBoolean(Prefs.HEALTH_SERVICE_ACTIVE,true)
-                .putInt(Prefs.HEALTH_RECOVERIES,watchdog.recoveries())
-                .putInt(Prefs.HEALTH_SCREENSHOTS,screenshotCount)
-                .putString(Prefs.HEALTH_STATE,detail)
-                .apply();
-        long last = watchdog.lastFinishedAt();
-        String lastAge = last == 0 ? "none yet" : (Math.max(0L, now-last)/1000)+"s ago";
-        status("Monitor heartbeat: "+detail+"; screenshots="+screenshotCount+
-                "; last finished="+lastAge+"; busy="+watchdog.busy()+
-                "; watchdog recoveries="+watchdog.recoveries());
-    }
-
-    private void reportForegroundUnavailable(long now) {
-        AccessibilityNodeInfo root=getRootInActiveWindow();
-        String description=root==null ? "no active window root" :
-                root.getPackageName()==null ? "active window has no package" :
-                "foreground="+root.getPackageName();
-        // The device can report a null root intermittently. Do not guess that
-        // Uber is foreground and never scan/tap based only on a stale event.
-        if(!description.equals(lastForegroundReport) ||
-                now-lastForegroundReportAt >= HEARTBEAT_MS) {
-            lastForegroundReport=description;
-            lastForegroundReportAt=now;
-            status("Scanner waiting: Uber Driver not confirmed ("+description+"). No tap.");
-        }
-    }
-
-    private boolean ownsFreshCapture(long token) {
-        final long now=SystemClock.elapsedRealtime();
-        if(watchdog.owns(token) && watchdog.overdue(now,CAPTURE_TIMEOUT_MS))
-            recoverStalledCapture(now);
-        return watchdog.safeToProcess(token,now,CAPTURE_TIMEOUT_MS);
-    }
-
-    private void finishCapture(long token) {
-        watchdog.finish(token,SystemClock.elapsedRealtime());
-    }
-
-    private void recordCaptureFailure(long token, String message) {
-        if(!watchdog.owns(token)) return;
-        finishCapture(token);
-        consecutiveCaptureErrors++;
-        // Recover automatically but avoid hammering a device that repeatedly
-        // refuses screenshot access. Normal scanning resumes after the backoff.
-        if(consecutiveCaptureErrors >= 3) {
-            nextCaptureAfter=SystemClock.elapsedRealtime()+
-                    Math.min(8000L,1000L*consecutiveCaptureErrors);
-        }
-        clearReadVerification();
-        status(message+"; failures="+consecutiveCaptureErrors+
-                "; auto-retry "+(consecutiveCaptureErrors>=3 ? "after backoff" : "on next scan"));
-    }
-
-    private void recoverStalledCapture(long now) {
-        if(!watchdog.overdue(now,CAPTURE_TIMEOUT_MS)) return;
-        final long elapsed=watchdog.elapsed(now);
-        final long expired=watchdog.recover(now,CAPTURE_TIMEOUT_MS);
-        if(expired==0) return;
-        // Invalidate all partial evidence: two NEW, matching fresh frames are
-        // required after recovery before any decline gesture is considered.
-        clearReadVerification();
-        clearPendingAcceptance();
-        hideOverlay();
-        consecutiveCaptureErrors++;
-        nextCaptureAfter=now+Math.min(5000L,1000L*consecutiveCaptureErrors);
-        Prefs.of(this).edit().putInt(Prefs.HEALTH_RECOVERIES,watchdog.recoveries()).apply();
-        status("SCANNER WATCHDOG RECOVERED stalled capture #"+expired+
-                " after "+elapsed+"ms. Old OCR/tap discarded; fresh verification required."+
-                " Recoveries="+watchdog.recoveries());
-    }
-
-    private void examinePickupAfterOffer(Bitmap screenshot,long token) {
+    private void examinePickupAfterOffer(Bitmap screenshot) {
         final long id=pendingAcceptanceId;
         if(id<=0 || !Prefs.of(this).getBoolean(Prefs.ACCEPT_TRACKING,true) ||
                 SystemClock.elapsedRealtime()-pendingAcceptanceSince>30000) {
-            clearPendingAcceptance();screenshot.recycle();finishCapture(token);return;
+            clearPendingAcceptance();screenshot.recycle();capturing=false;return;
         }
         if(recognizer==null) recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-        submitOcr(screenshot)
+        recognizer.process(InputImage.fromBitmap(screenshot,0))
             .addOnSuccessListener(text -> {
-                if(!ownsFreshCapture(token) || id!=pendingAcceptanceId || !isUberForeground())return;
+                if(id!=pendingAcceptanceId || !isUberForeground())return;
                 boolean found=OfferAcceptanceEvidence.confirmsActivePickup(text.getText(),pendingPickup);
                 if(acceptanceEvidence.observe(found)) {
                     try(OfferHistoryStore store=new OfferHistoryStore(this)) {
@@ -281,20 +165,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     clearPendingAcceptance();
                 } else if(found)status("Pickup assignment evidence seen once; awaiting second confirmation.");
             })
-            .addOnFailureListener(e->{if(ownsFreshCapture(token))
-                status("Acceptance confirmation OCR failed: "+e.getClass().getSimpleName());})
-            .addOnCompleteListener(task->{ocrInFlight=Math.max(0,ocrInFlight-1);screenshot.recycle();finishCapture(token);});
+            .addOnFailureListener(e->status("Acceptance confirmation OCR failed: "+e.getClass().getSimpleName()))
+            .addOnCompleteListener(task->{screenshot.recycle();capturing=false;});
     }
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
-        watchdog.invalidate();
-        consecutiveCaptureErrors=0;nextCaptureAfter=0;lastHeartbeatAt=0;
-        Prefs.of(this).edit().putBoolean(Prefs.HEALTH_SERVICE_ACTIVE,true)
-                .putLong(Prefs.HEALTH_HEARTBEAT_TIME,System.currentTimeMillis())
-                .putString(Prefs.HEALTH_STATE,"Accessibility connected")
-                .putInt(Prefs.HEALTH_RECOVERIES,0).apply();
-        status("Accessibility connected. Uber Driver-only monitoring + scanner watchdog active.");
+        status("Accessibility connected. Uber Driver-only monitoring is active.");
         handler.removeCallbacks(monitorLoop);
         handler.post(monitorLoop);
     }
@@ -333,71 +210,58 @@ public final class OfferAccessibilityService extends AccessibilityService {
         boolean confirmationPending=readVerifier.isPending()||correctionVerifier.isPending()||
                 hourBoundVerifier.isPending()||countVerifier.isPending()||fastRetryPending;
         long minInterval=confirmationPending?FAST_CONFIRM_MIN_CAPTURE_MS:UBER_MIN_CAPTURE_MS;
-        recoverStalledCapture(now);
-        if(ocrInFlight>=2 && !watchdog.busy()){status("OCR backlog: waiting for outstanding reads; restart accessibility if this persists.");return;}
-        if(watchdog.busy() || visualBusy || gestureBusy || now<nextCaptureAfter ||
-                now-lastCaptureAt<minInterval)return;
+        if(capturing || now-lastCaptureAt<minInterval)return;
         fastRetryPending=false;
         lastCaptureAt=now;
         scanStartMs=now;
-        final long token=watchdog.begin(now);
+        capturing=true;
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY,getMainExecutor(),new TakeScreenshotCallback() {
                 @Override public void onFailure(int errorCode) {
-                    if(!ownsFreshCapture(token))return;
-                    recordCaptureFailure(token,"Screenshot permission / capture failed (Android code " +errorCode+")");
-                    // A new scan will retry after the Android screenshot rate limit.
-                    // Never reuse half-completed verification from the failed capture.
+                    capturing=false;
+                    if(errorCode==ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT &&
+                            (readVerifier.isPending() || hourBoundVerifier.isPending() ||
+                             countVerifier.isPending())) {
+                        handler.removeCallbacks(fastVerifyRunnable);
+                        handler.postDelayed(fastVerifyRunnable,500);
+                        status("Screenshot rate-limited: safely retrying verification; no tap.");
+                    } else status("Screenshot permission / capture failed (Android code " +errorCode+").");
                 }
                 @Override public void onSuccess(ScreenshotResult result) {
                     HardwareBuffer hardware=result.getHardwareBuffer();
-                    if(!ownsFreshCapture(token)) {
-                        if(hardware!=null)hardware.close();
-                        return;
-                    }
                     if (hardware==null) {
-                        recordCaptureFailure(token,"Screenshot returned no image buffer");return;
+                        capturing=false;status("Screenshot returned no image buffer.");return;
                     }
                     Bitmap copy=null;
                     try {
                         Bitmap buffer=Bitmap.wrapHardwareBuffer(hardware,result.getColorSpace());
-                        if (buffer!=null) {try{copy=buffer.copy(Bitmap.Config.ARGB_8888,false);}finally{buffer.recycle();}}
+                        if (buffer!=null) copy=buffer.copy(Bitmap.Config.ARGB_8888,false);
                     } catch (Exception e) {
                         status("Could not read screenshot: "+e.getClass().getSimpleName());
                     } finally {hardware.close();}
-                    if(copy==null) {
-                        recordCaptureFailure(token,"Could not copy screenshot buffer");return;
-                    }
-                    // Successful screenshot capture. A later OCR timeout still
-                    // triggers watchdog recovery if a listener never completes.
-                    consecutiveCaptureErrors=0;
-                    nextCaptureAfter=0;
-                    screenshotCount++;
-                    processScreenshot(copy, now, SystemClock.elapsedRealtime(),token);
+                    if(copy==null) {capturing=false;return;}
+                    processScreenshot(copy, scanStartMs, SystemClock.elapsedRealtime());
                 }
             });
         } catch(Exception e) {
-            recordCaptureFailure(token,"Screenshot exception: "+e.getClass().getSimpleName());
+            capturing=false;
+            status("Screenshot exception: "+e.getClass().getSimpleName());
         }
     }
 
-    private void processScreenshot(Bitmap source,long scanStarted,long screenshotReady,long token) {
-        if(!ownsFreshCapture(token)) {source.recycle();return;}
+    private void processScreenshot(Bitmap source,long scanStarted,long screenshotReady) {
         if (!isSupportedForeground() || !Prefs.of(this).getBoolean(Prefs.MONITOR,false)) {
             hideOverlay();clearPendingAcceptance();
-            source.recycle();finishCapture(token);
+            source.recycle();capturing=false;
             status("Uber Driver no longer foreground. No action.");return;
         }
         int w=source.getWidth(),h=source.getHeight();
         if(w<350 || h<700 || Math.abs(w/(double)h-
                 VisualDeclineDetector.WIDTH/(double)VisualDeclineDetector.HEIGHT)>.018) {
-            hideOverlay();source.recycle();finishCapture(token);
+            hideOverlay();source.recycle();capturing=false;
             status("Screen aspect ratio changed; no tap ("+w+"x"+h+").");return;
         }
-        visualBusy=true;
-        final int priorTop=recentCardTop;
-        try {visualWorker.execute(()->{
-            try {
+        try {
             if(template==null) {
                 BitmapFactory.Options options=new BitmapFactory.Options();
                 options.inScaled=false; // Always load exactly 41x41 on high-density phones.
@@ -417,22 +281,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
             }
             Bitmap resized=Bitmap.createScaledBitmap(source,VisualDeclineDetector.WIDTH,
                     VisualDeclineDetector.HEIGHT,true);
-            if(reusablePixels==null)reusablePixels=new int[VisualDeclineDetector.WIDTH*VisualDeclineDetector.HEIGHT];
-            int[] pixels=reusablePixels;
+            int[] pixels=new int[VisualDeclineDetector.WIDTH*VisualDeclineDetector.HEIGHT];
             resized.getPixels(pixels,0,VisualDeclineDetector.WIDTH,0,0,
                     VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT);
             if(resized!=source) resized.recycle();
-            VisualDeclineDetector.Match visual=VisualDeclineDetector.locateNear(pixels,
+            VisualDeclineDetector.Match visual=VisualDeclineDetector.locate(pixels,
                     VisualDeclineDetector.WIDTH,VisualDeclineDetector.HEIGHT,
-                    template,darkTemplate,41,41,priorTop);
-            handler.post(()->{visualBusy=false;processVisual(source,scanStarted,screenshotReady,token,visual,w,h);});
-            } catch(Exception e){handler.post(()->{visualBusy=false;source.recycle();finishCapture(token);status("Visual worker failed: "+e.getClass().getSimpleName());});}
-        });}catch(RuntimeException e){visualBusy=false;source.recycle();finishCapture(token);}
-    }
-    private void processVisual(Bitmap source,long scanStarted,long screenshotReady,long token,VisualDeclineDetector.Match visual,int w,int h){
-        if(!ownsFreshCapture(token)||!isSupportedForeground()){source.recycle();finishCapture(token);return;}
-        try {
-            if(visual.found)recentCardTop=visual.cardTop;else recentCardTop=-1;
+                    template,darkTemplate,41,41);
             final long visualReady=SystemClock.elapsedRealtime();
             if(!visual.found) {
                 hideOverlay();clearReadVerification();
@@ -450,13 +305,13 @@ public final class OfferAccessibilityService extends AccessibilityService {
                     lastOutcome=null;
                     clearReadVerification();
                     reviewAlerted=false;
-                    autoDeclineSent=false;retries.reset();
+                    autoDeclineSent=false;
                     confirmedHourBound=false;confirmedLowerHours=0;
                 }
                 if(pendingAcceptanceId>0) {
-                    examinePickupAfterOffer(source,token);
+                    examinePickupAfterOffer(source);
                 } else {
-                    source.recycle();finishCapture(token);
+                    source.recycle();capturing=false;
                     status("No supported offer card; overlay hidden. No action.");
                 }
                 return;
@@ -477,48 +332,30 @@ public final class OfferAccessibilityService extends AccessibilityService {
             if(right-left>150 && bottom-top>190)
                 ocrImage=Bitmap.createBitmap(frame,left,top,right-left,bottom-top);
             else ocrImage=frame;
-            final Bitmap adjusted;
-            if(payoutFailures>0&&payoutFailures%2==1){
-                adjusted=Bitmap.createBitmap(ocrImage.getWidth(),ocrImage.getHeight(),Bitmap.Config.ARGB_8888);
-                android.graphics.ColorMatrix contrast=new android.graphics.ColorMatrix(new float[]{1.5f,0,0,0,-64,0,1.5f,0,0,-64,0,0,1.5f,0,-64,0,0,0,1,0});
-                android.graphics.Paint paint=new android.graphics.Paint();paint.setColorFilter(new android.graphics.ColorMatrixColorFilter(contrast));
-                new android.graphics.Canvas(adjusted).drawBitmap(ocrImage,0,0,paint);
-            }else if(payoutFailures>=2&&ocrImage.getWidth()<=1000&&ocrImage.getHeight()<=1600){
-                adjusted=Bitmap.createScaledBitmap(ocrImage,Math.round(ocrImage.getWidth()*1.25f),Math.round(ocrImage.getHeight()*1.25f),true);
-            }else adjusted=ocrImage;
-            final float ocrScaleX=adjusted.getWidth()/(float)ocrImage.getWidth(),ocrScaleY=adjusted.getHeight()/(float)ocrImage.getHeight();
-            final com.google.android.gms.tasks.Task<Text> submitted;
-            try{submitted=submitOcr(adjusted);}catch(RuntimeException e){if(adjusted!=ocrImage)adjusted.recycle();if(ocrImage!=frame)ocrImage.recycle();throw e;}
-            submitted
+            recognizer.process(InputImage.fromBitmap(ocrImage,0))
                 .addOnSuccessListener(text -> {
-                    if(!ownsFreshCapture(token)) return;
-                    try {onOcrReady(text,visual,w,h,ocrImage==frame?0:left,ocrImage==frame?0:top,ocrScaleX,ocrScaleY,scanStarted,screenshotReady,visualReady);} catch(Exception e) {
+                    try {onOcrReady(text,visual,w,h,left,top,scanStarted,screenshotReady,visualReady);} catch(Exception e) {
                         status("Price-reading exception: "+e.getClass().getSimpleName());
                     }
                 })
-                .addOnFailureListener(err -> {
-                    if(ownsFreshCapture(token))
-                        status("Screenshot OK, X found, but OCR failed: "+err.getClass().getSimpleName());
-                })
+                .addOnFailureListener(err ->
+                        status("Screenshot OK, X found, but OCR failed: "+err.getClass().getSimpleName()))
                 .addOnCompleteListener(task -> {
-                    ocrInFlight=Math.max(0,ocrInFlight-1);if(adjusted!=ocrImage)adjusted.recycle();
                     if(ocrImage!=frame)ocrImage.recycle();
-                    frame.recycle();
-                    boolean wasActive=watchdog.owns(token);
-                    finishCapture(token);
-                    if(wasActive && (readVerifier.isPending() ||
+                    frame.recycle();capturing=false;
+                    if(readVerifier.isPending() ||
                     correctionVerifier.isPending() || hourBoundVerifier.isPending() ||
                 countVerifier.isPending() ||
-                    fastRetryPending))scheduleFastVerify();
+                    fastRetryPending)scheduleFastVerify();
                 });
         } catch(Exception e) {
-            source.recycle();finishCapture(token);
+            source.recycle();capturing=false;
             status("X detection exception: "+e.getClass().getSimpleName());
         }
     }
 
     private void onOcrReady(Text text,VisualDeclineDetector.Match visual,int width,int height,
-                            int offsetX,int offsetY,float ocrScaleX,float ocrScaleY,long scanStarted,
+                            int offsetX,int offsetY,long scanStarted,
                             long screenshotReady,long visualReady) {
         if(!isSupportedForeground()) {status("Uber Driver left foreground while reading; no action.");return;}
         SharedPreferences prefs=Prefs.of(this);
@@ -530,22 +367,21 @@ public final class OfferAccessibilityService extends AccessibilityService {
                 if(box==null) continue;
                 // ML Kit bounding boxes use the original screenshot's pixel dimensions.
                 lines.add(new OfferScreenEvaluator.Line(line.getText(),
-                    Math.round((box.left/ocrScaleX+offsetX)*VisualDeclineDetector.WIDTH/(float)width),
-                    Math.round((box.top/ocrScaleY+offsetY)*VisualDeclineDetector.HEIGHT/(float)height),
-                    Math.round((box.right/ocrScaleX+offsetX)*VisualDeclineDetector.WIDTH/(float)width),
-                    Math.round((box.bottom/ocrScaleY+offsetY)*VisualDeclineDetector.HEIGHT/(float)height)));
+                    Math.round((box.left+offsetX)*VisualDeclineDetector.WIDTH/(float)width),
+                    Math.round((box.top+offsetY)*VisualDeclineDetector.HEIGHT/(float)height),
+                    Math.round((box.right+offsetX)*VisualDeclineDetector.WIDTH/(float)width),
+                    Math.round((box.bottom+offsetY)*VisualDeclineDetector.HEIGHT/(float)height)));
             }
         }
         final String timing=OfferScanTiming.summary(scanStarted,screenshotReady,
                 visualReady,SystemClock.elapsedRealtime());
         OfferScreenEvaluator.Assessment a=OfferScreenEvaluator.assess(visual,lines);
         if(!a.valid) {
-            payoutFailures++;hideOverlay();
+            hideOverlay();
             requestFastRetry(visual);
             status("X found, but " + a.reason +
                     ". " + retryStatus() + ". No tap. " + timing);return;
         }
-        payoutFailures=0;
         double payout=a.payout;
         long now=SystemClock.elapsedRealtime();
         // New offers are saved once. Including merchant identity prevents a
@@ -588,14 +424,10 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         OfferRuleEngine.Config activeRules=tieredMode?
                 tierRules.configFor(parsed.deliveryCount):Prefs.rules(prefs);
-        OfferRuleEngine.Decision diagnostic=OfferRuleEngine.evaluate(activeRules,payout,parsed.minutes,parsed.metres,parsed.deliveryCount);
-        prefs.edit().putString("uber_last_rule_v30",OfferScreenEvaluator.offerKind(visual,lines)+" | A$"+payout+" | raw ["+a.rawPayout+" / "+parsed.rawDuration+"] | orders="+parsed.deliveryCount+" | "+diagnostic.outcome+" | "+diagnostic.reason).apply();
         boolean countRequired=tieredMode || activeRules.deliveriesOn;
         boolean sameOffer=lastHistoryId>0 && !Double.isNaN(lastAmount) &&
                 Math.abs(lastAmount-payout)<.005 &&
                 now-lastDecisionAt<REPEAT_GUARD_MS &&
-                (cachedMinutes<=0||cachedMinutes==parsed.minutes) &&
-                (cachedMetres<=0||cachedMetres==parsed.metres) &&
                 Math.abs(visual.x-lastX)<3 && Math.abs(visual.y-lastY)<3 &&
                 cachedPickup.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+"," ").trim()
                     .equals(parsed.pickup.toLowerCase(Locale.ROOT)
@@ -642,14 +474,6 @@ public final class OfferAccessibilityService extends AccessibilityService {
         if(!sameOffer) {
             OfferReadVerifier.Result verified=readVerifier.observe(payout,parsed,visual.x,visual.y,now,countRequired);
             if(verified.state!=OfferReadVerifier.State.CONFIRMED) {
-                OfferRuleEngine.Decision display=OfferRuleEngine.evaluate(activeRules,payout,parsed.minutes,parsed.metres,parsed.deliveryCount);
-                if(display.outcome==OfferRuleEngine.Outcome.SHOW && OfferExtractionGuard.checkFinancial(parsed).valid && OfferScreenEvaluator.hasOfferIdentity(visual,lines)){
-                    boolean shown=false;
-                    if(prefs.getBoolean(Prefs.OVERLAY_ENABLED,true)){if(liveOverlay==null)liveOverlay=new OfferOverlay(this);shown=liveOverlay.show(display.hourly,display.perKm);}
-                    if(prefs.getBoolean(Prefs.ALERT,true))alertOnce(payout,parsed);
-                    status("Qualifies: "+display.reason+"; overlay "+(shown?"shown":"off/unavailable")+"; awaiting history verification.");
-                    requestFastRetry(visual);return;
-                }
                 hideOverlay();
                 OfferRuleEngine.Decision bounded=OfferSafeDecline.evaluate(activeRules,payout,parsed);
                 if(bounded.outcome==OfferRuleEngine.Outcome.DECLINE) {
@@ -817,7 +641,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             final String overlayStatus=visible ? "overlay shown" :
                     canShow ? "overlay could not display" : "overlay disabled";
             if(prefs.getBoolean(Prefs.ALERT,true)) {
-                boolean started=alertOnce(payout,parsed);
+                boolean started=OfferAlert.signal(this,payout);
                 status(String.format(Locale.US,
                         "A$%.2f — QUALIFIES; %s. %s; %s; no tap.%s",
                         payout,decision.reason,overlayStatus,
@@ -983,9 +807,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             VisualDeclineDetector.Match visual,List<OfferScreenEvaluator.Line> lines,
             int width,int height,long now,String timing) {
         SharedPreferences prefs=Prefs.of(this);
-        String retryKey=Math.round(payout*100)+"/"+parsed.minutes+"/"+parsed.metres+"/"+parsed.deliveryCount+"/"+parsed.type;
-        retries.observe(retryKey,now);
-        if(gestureBusy||!retries.ready(now))return;
+        if(autoDeclineSent) {status("Decline gesture already dispatched for this offer; no repeat.");return;}
         if(!prefs.getBoolean(Prefs.AUTO_DECLINE,false)||prefs.getBoolean(Prefs.VISUAL_DRY_RUN,true)) {
             status("Automatic decline disabled or TEST ONLY enabled. No tap. "+timing);return;
         }
@@ -994,7 +816,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
         }
         OfferSurfacePolicy.Host host=foregroundHost();
         boolean reliableOfferText=OfferScreenEvaluator.hasOfferIdentity(visual,lines);
-        if(!reliableOfferText||!OfferSurfacePolicy.allowDecline(host,true,reliableOfferText,2,visual.confidence)) {
+        if(!OfferSurfacePolicy.allowDecline(host,true,reliableOfferText,1,visual.confidence)) {
             status("Offer verification failed; no tap. " + timing);return;
         }
         if(SystemClock.elapsedRealtime()-lastCaptureAt>1900) {
@@ -1003,38 +825,23 @@ public final class OfferAccessibilityService extends AccessibilityService {
         // The only gesture target comes from the freshly verified X on THIS screenshot.
         float x=visual.x*width/(float)VisualDeclineDetector.WIDTH;
         float y=visual.y*height/(float)VisualDeclineDetector.HEIGHT;
-        if(!targetIsUber((int)x,(int)y)){status("Target no longer in Uber window; no tap.");return;}
-        AccessibilityNodeInfo direct=findDecline(getRootInActiveWindow(),(int)x,(int)y,0);
-        if(!targetIsUber((int)x,(int)y)){status("Uber target changed during accessibility lookup; no tap.");return;}
-        final int attempt=retries.attempt(now);
-        status("Verified native Uber target: "+x+","+y+"; accessible decline node="+(direct!=null));
-        if(direct!=null && direct.performAction(AccessibilityNodeInfo.ACTION_CLICK)){
-            autoDeclineSent=!retries.canAttempt();
-            try(OfferHistoryStore store=new OfferHistoryStore(this)){store.markDeclineAttempt(lastHistoryId);}catch(Exception ignored){}
-            status("Uber decline attempt "+attempt+"/3 via accessibility; checking dismissal.");return;
-        }
         Path path=new Path();path.moveTo(x,y);
         GestureDescription gesture=new GestureDescription.Builder()
-            .addStroke(new GestureDescription.StrokeDescription(path,0,UberDeclineRetry.holdMillis(attempt))).build();
+            .addStroke(new GestureDescription.StrokeDescription(path,0,90)).build();
         final long declinedHistoryId=lastHistoryId;
         final String finalTiming=timing;
-        gestureBusy=true;final long g=++gestureGeneration;
         boolean accepted=dispatchGesture(gesture,new GestureResultCallback() {
             @Override public void onCompleted(GestureDescription gesture) {
-                if(g!=gestureGeneration)return;gestureBusy=false;autoDeclineSent=!retries.canAttempt();
                 status(String.format(Locale.US,
                         "A$%.2f: X gesture completed. Uber decline NOT independently confirmed. %s",
                         payout,finalTiming));
             }
             @Override public void onCancelled(GestureDescription gesture) {
-                if(g!=gestureGeneration)return;gestureBusy=false;autoDeclineSent=!retries.canAttempt();
                 status(String.format(Locale.US,
                         "A$%.2f: X gesture cancelled; decline not confirmed. %s",
                         payout,finalTiming));
             }
         },null);
-        if(!accepted){gestureBusy=false;autoDeclineSent=!retries.canAttempt();}
-        else handler.postDelayed(()->{if(gestureBusy&&g==gestureGeneration){gestureBusy=false;gestureGeneration++;autoDeclineSent=!retries.canAttempt();status("Gesture callback timed out; reverify.");}},2500);
         if(accepted) {
             autoDeclineSent=true;
             try(OfferHistoryStore store=new OfferHistoryStore(this)) {
@@ -1044,27 +851,9 @@ public final class OfferAccessibilityService extends AccessibilityService {
         status(String.format(Locale.US,accepted?
                 "A$%.2f: X tap dispatched (%s, %s); Uber decline unconfirmed. %s":
                 "A$%.2f: Android rejected X gesture; no tap. (%s, %s). %s",
-                payout,host,visual.theme,finalTiming+" | attempt "+attempt+"/3 | physical target="+x+","+y+" screen="+width+"x"+height));
+                payout,host,visual.theme,finalTiming));
     }
 
-    private boolean targetIsUber(int x,int y){
-        if(!isUberForeground())return false;
-        List<AccessibilityWindowInfo> windows=getWindows();
-        if(windows==null||windows.isEmpty())return false;
-        AccessibilityWindowInfo top=null;
-        for(AccessibilityWindowInfo w:windows){Rect b=new Rect();w.getBoundsInScreen(b);if(b.contains(x,y)&&(top==null||w.getLayer()>top.getLayer()))top=w;}
-        if(top==null)return false;
-        AccessibilityNodeInfo r=top.getRoot();return r!=null&&r.getPackageName()!=null&&OfferSurfacePolicy.UBER.contentEquals(r.getPackageName());
-    }
-    private AccessibilityNodeInfo findDecline(AccessibilityNodeInfo node,int x,int y,int depth){
-        if(node==null||depth>18)return null;
-        Rect b=new Rect();node.getBoundsInScreen(b);
-        if(!b.contains(x,y)||!node.isVisibleToUser())return null;
-        String t=String.valueOf(node.getText()).trim().toLowerCase(Locale.ROOT),d=String.valueOf(node.getContentDescription()).trim().toLowerCase(Locale.ROOT);
-        if(node.isEnabled()&&node.isClickable()&&b.width()<200&&b.height()<200&&(t.matches("x|close|dismiss|decline")||d.matches("x|close|dismiss|decline|decline offer|dismiss offer|close offer")))return node;
-        for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=findDecline(node.getChild(i),x,y,depth+1);if(child!=null)return child;}
-        return null;
-    }
     private void requestFastRetry(VisualDeclineDetector.Match visual) {
         if(visual!=null && visual.found &&
                 retryBudget.request(visual.x,visual.y,SystemClock.elapsedRealtime()))
@@ -1079,7 +868,6 @@ public final class OfferAccessibilityService extends AccessibilityService {
     private void status(String msg) {
         SharedPreferences p=Prefs.of(this);
         String old=p.getString(Prefs.LIVE_STATUS,"");
-        if(msg.equals(old))return;
         long time=System.currentTimeMillis();
         SharedPreferences.Editor edit=p.edit().putString(Prefs.LIVE_STATUS,msg)
                 .putLong(Prefs.LIVE_TIME,time);
@@ -1088,7 +876,7 @@ public final class OfferAccessibilityService extends AccessibilityService {
             String previous=p.getString(Prefs.DIAG_HISTORY,"");
             String[] entries=previous.split("\n");
             StringBuilder b=new StringBuilder(stamp).append(" | ").append(msg);
-            for(int i=0;i<Math.min(entries.length,60);i++) {
+            for(int i=0;i<Math.min(entries.length,12);i++) {
                 if(!entries[i].isEmpty()) b.append('\n').append(entries[i]);
             }
             edit.putString(Prefs.DIAG_HISTORY,b.toString());
@@ -1097,28 +885,12 @@ public final class OfferAccessibilityService extends AccessibilityService {
     }
 
     @Override public void onInterrupt() {
-        Prefs.of(this).edit().putString(Prefs.HEALTH_STATE,"Accessibility interrupted").apply();
-        watchdog.invalidate();
         hideOverlay();clearPendingAcceptance();clearReadVerification();
-        status("Accessibility interrupted. Monitoring paused; service reconnect may be required.");
-    }
-    @Override public boolean onUnbind(android.content.Intent intent) {
-        Prefs.of(this).edit().putBoolean(Prefs.HEALTH_SERVICE_ACTIVE,false)
-                .putString(Prefs.HEALTH_STATE,"Accessibility unbound").apply();
-        watchdog.invalidate();
-        handler.removeCallbacks(monitorLoop);
-        handler.removeCallbacks(fastVerifyRunnable);
-        hideOverlay();clearPendingAcceptance();clearReadVerification();
-        status("Accessibility unbound by Android; automatic restart is not permitted if disabled.");
-        return super.onUnbind(intent);
+        status("Accessibility interrupted. Monitoring paused.");
     }
     @Override public void onDestroy() {
-        Prefs.of(this).edit().putBoolean(Prefs.HEALTH_SERVICE_ACTIVE,false)
-                .putString(Prefs.HEALTH_STATE,"Accessibility service stopped").apply();
-        watchdog.invalidate();
         handler.removeCallbacks(monitorLoop);
         hideOverlay();clearPendingAcceptance();clearReadVerification();
-        visualWorker.shutdown();
         if(recognizer!=null) recognizer.close();
         status("Accessibility service stopped. Re-enable if monitoring is needed.");
         super.onDestroy();

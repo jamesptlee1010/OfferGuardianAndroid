@@ -13,6 +13,6 @@ public final class OfferSurfacePolicy {
     public static boolean allowDecline(Host host,boolean cardVerified,
                                        boolean offerTextVerified,int stableFrames,
                                        double xConfidence) {
-        return host==Host.UBER && cardVerified && offerTextVerified && stableFrames>=2 && xConfidence>=.90;
+        return host==Host.UBER && cardVerified && xConfidence>=.90;
     }
 }

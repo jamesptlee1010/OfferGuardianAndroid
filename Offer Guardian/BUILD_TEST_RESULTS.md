@@ -1,7 +1,14 @@
-# 3.0.0 validation
+# OfferGuardian v0.9.14 — Local verification
 
-- 26 inherited host-side workflow steps passed (Java rules, visual synthetic detection, duration and verification, watchdog, CSV and SQLite history migration, filtering, sorting, delivery counts, overlays, accepted evidence, tier defaults, lifecycle checks).
-- 40 new Uber-only regression assertions passed (financial decisions for the $18.03 Woolworths, $18.07 and $19.03 Coles examples; reset retry budget for a changed offer; cooldown and bounds; hour/minute OCR and punctuation; history deduplication and offer identity).
-- Three supplied recent screenshot images normalised with PIL to 686x1536, then tested with Java detector: 185.jpg 98.78% (579,522); 186.jpg 98.51% (579,618); 187.jpg 96.03% (579,587). Repeat search matched all coordinates. This is an offline visual test only, not Android OCR or gesture test. Raw screenshots are not bundled.
-- Java syntax parser passed 36 production source files. This is not an Android type-check or APK compile.
-- Full Android SDK/Gradle compilation and live accessibility gestures, screenshot capture, RAM and battery measurements are not verified locally; GitHub workflow and parked device testing required. No promise of real-world accuracy or speed.
+- Base: v0.9.13 Import History source ZIP.
+- Removed `com.waze` Android package queries, accessibility events, and UI references.
+- Removed navigation-specific scanning, WazeFastVerifier, its dedicated test, and Waze-only gesture verification paths.
+- Retained Uber Driver monitoring (1700 ms normal polling) and bounded 430 ms active-offer OCR retries.
+- All 25 GitHub workflow host-side check steps passed locally with updated tests.
+- Confirmed the navigation package classifies as OTHER, never as an allowed scan/decline host.
+- Preserved History import/export, filters, sorting, tiered rules and existing OCR checks.
+- Android SDK/Gradle are unavailable locally: Android APK compilation and phone testing remain outstanding.
+
+## Important GitHub upgrade step
+
+Browser uploads do not delete old files. If your existing repository still has `WazeFastVerifier.java`, delete that file separately. The v0.9.14 archive itself does not include it.

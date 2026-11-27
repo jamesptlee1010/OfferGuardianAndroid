@@ -223,11 +223,6 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
         ContentValues c=new ContentValues();c.put("action","DECLINE_REQUESTED");
         getWritableDatabase().update(TABLE,c,"id=?",new String[]{Long.toString(id)});
     }
-    public synchronized void markDashDismissed(long id) {
-        if(id<=0)return;
-        ContentValues c=new ContentValues();c.put("action","DASH_DISMISSED_UNCONFIRMED");
-        getWritableDatabase().update(TABLE,c,"id=? AND outcome=? AND action='DECLINE_REQUESTED'",new String[]{Long.toString(id),UNKNOWN});
-    }
     /** Confirmed pickup assignment only; never overwrite a manually selected outcome. */
     public synchronized boolean markAcceptedIfUnknown(long id) {
         if(id<=0)return false;
@@ -396,9 +391,7 @@ public final class OfferHistoryStore extends SQLiteOpenHelper {
             where.append(" AND seen_at>=?");
             args.add(Long.toString(firstIncludedMillis));
         }
-        if("@Uber".equals(search)) {where.append(" AND type NOT LIKE 'DoorDash · %'");}
-        else if("@DoorDash".equals(search)) {where.append(" AND type LIKE 'DoorDash · %'");}
-        else if(search!=null && !search.trim().isEmpty()) {
+        if(search!=null && !search.trim().isEmpty()) {
             where.append(" AND (pickup LIKE ? OR destination LIKE ? OR type LIKE ?)");
             String token="%"+search.trim()+"%";
             args.add(token);args.add(token);args.add(token);

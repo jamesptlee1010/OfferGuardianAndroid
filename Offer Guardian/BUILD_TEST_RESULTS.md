@@ -1,8 +1,7 @@
-# v2.6.1 validation
+# 3.0.0 validation
 
-- 32 existing host-side workflow checks passed, including prior parser/rule, SQLite filter simulations, notification policy, visual fallback, and retry checks. Existing retry timing test adjusted for the intentional 1500 ms cooldown.
-- New Stability261Test: 38 assertions passed (user's time OCR variants, near-identical merchant examples, matching financial identity, separated offers, pending DoorDash stage/timer safety and gesture hold durations). Added as the 33rd host workflow check. This tests pure policy, not live UI interactions or Android SQLite merge integration.
-- Java 17 syntax parse: 45 source files passed. This does not perform Android symbol resolution or compile the APK.
-- VersionName 2.6.1, versionCode 32; workflow selects only matching project and checks APK badging.
-- No local Android SDK or Gradle 8.9; APK compilation and runtime device testing not performed. No claim that watchdog stalls or decline effectiveness are fully resolved.
-- Existing history is not modified by installing the source. Export before updating/cleanup.
+- 26 inherited host-side workflow steps passed (Java rules, visual synthetic detection, duration and verification, watchdog, CSV and SQLite history migration, filtering, sorting, delivery counts, overlays, accepted evidence, tier defaults, lifecycle checks).
+- 40 new Uber-only regression assertions passed (financial decisions for the $18.03 Woolworths, $18.07 and $19.03 Coles examples; reset retry budget for a changed offer; cooldown and bounds; hour/minute OCR and punctuation; history deduplication and offer identity).
+- Three supplied recent screenshot images normalised with PIL to 686x1536, then tested with Java detector: 185.jpg 98.78% (579,522); 186.jpg 98.51% (579,618); 187.jpg 96.03% (579,587). Repeat search matched all coordinates. This is an offline visual test only, not Android OCR or gesture test. Raw screenshots are not bundled.
+- Java syntax parser passed 36 production source files. This is not an Android type-check or APK compile.
+- Full Android SDK/Gradle compilation and live accessibility gestures, screenshot capture, RAM and battery measurements are not verified locally; GitHub workflow and parked device testing required. No promise of real-world accuracy or speed.

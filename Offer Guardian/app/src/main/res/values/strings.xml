@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">Offer Guardian</string>
-    <string name="accessibility_description">With your permission, reads visible Uber Driver and DoorDash offers, alerts when rules are met and, if explicitly enabled, attempts verified declines. DoorDash notifications can optionally trigger app switching when idle. No automatic accepts, no network access, and no screen content is uploaded.</string>
+    <string name="accessibility_description">With your permission, reads visible information from the Uber Driver app to recognise delivery offer amounts. Alerts for offers above your threshold; if you explicitly enable automatic declines, it may tap a verified X on non-qualifying offers. No automatic accepts, no network access, and no screen content is uploaded.</string>
 </resources>

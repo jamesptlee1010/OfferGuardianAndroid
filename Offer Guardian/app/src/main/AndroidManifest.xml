@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <queries>
         <package android:name="com.ubercab.driver" />
-        <package android:name="com.doordash.driverapp" />
     </queries>
     <application
         android:allowBackup="false"
@@ -25,14 +24,11 @@
         </activity>
         <activity android:name=".OfferRulesActivity" android:exported="false" />
         <activity android:name=".OfferHistoryActivity" android:exported="false" />
-        <service android:name=".OfferNotificationListener" android:label="Offer Guardian offer notifications" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
-            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
-        </service>
         <service
             android:name=".OfferAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true"
-            android:label="Offer Guardian – delivery monitor">
+            android:label="Offer Guardian – Uber Driver monitor">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
